@@ -20,7 +20,7 @@ if (isProduction || useCloudinary) {
   storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
-      folder: "mazone",
+      folder: "firestore",
       allowed_formats: ["jpg", "jpeg", "png", "gif", "webp"],
       transformation: [{ width: 800, height: 800, crop: "limit" }],
     },
