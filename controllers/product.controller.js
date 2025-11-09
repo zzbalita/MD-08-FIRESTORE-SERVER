@@ -21,7 +21,7 @@ function getImageUrl(file) {
 function extractPublicId(url) {
   const parts = url.split("/");
   const filename = parts.pop().split(".")[0];
-  const folder = "mazone";
+  const folder = "firestore";
   return `${folder}/${filename}`;
 }
 

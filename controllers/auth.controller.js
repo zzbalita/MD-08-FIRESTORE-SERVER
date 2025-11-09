@@ -34,7 +34,7 @@ exports.register = async (req, res) => {
     <p>Mã xác minh (OTP) của bạn là: <b>${otp}</b></p>
     <p>Mã này sẽ hết hạn sau 10 phút.</p>`;
 
-    await sendMail(email, "Xác minh tài khoản - MazonePoly", html);
+    await sendMail(email, "Xác minh tài khoản - FireStore", html);
 
     res.json({ message: "Đã gửi mã OTP xác minh tới email", email });
   } catch (error) {
