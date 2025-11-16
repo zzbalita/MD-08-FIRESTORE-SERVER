@@ -99,7 +99,7 @@ const ChatMessageSchema = new Schema({
 
 // Indexes for better performance
 ChatMessageSchema.index({ chat_id: 1, timestamp: -1 });
-ChatMessageSchema.index({ message_id: 1 });
+// message_id index is automatically created by unique: true in schema
 ChatMessageSchema.index({ user_id: 1, timestamp: -1 });
 ChatMessageSchema.index({ admin_id: 1, timestamp: -1 });
 ChatMessageSchema.index({ is_read: 1 });
