@@ -23,7 +23,10 @@ const io = new Server(server, {
       "http://localhost:5002",
       "http://10.158.14.189",
       "exp://192.168.1.9:8081", // Expo development server
-      "exp://localhost:8081"     // Expo local development
+      "exp://localhost:8081"  
+      ,   // Expo local development
+      "https://md-08-firestore-admin.vercel.app/", // Expo local development
+      "https://md-08-firestore-admin.vercel.app/" // Expo local development
     ],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,

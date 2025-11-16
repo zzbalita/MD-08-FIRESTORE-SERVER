@@ -34,6 +34,7 @@ const corsOptions = {
     "http://localhost:5002",
     "http://10.158.14.189",
     "http://localhost:5003",
+    "https://md-08-firestore-admin.vercel.app/"
     
   ],
   credentials: true,
