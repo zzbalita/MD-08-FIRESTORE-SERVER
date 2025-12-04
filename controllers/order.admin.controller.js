@@ -1,0 +1,30 @@
+const Order = require('../models/Order');
+
+// Admin lấy chi tiết đơn hàng (bất kỳ đơn nào)
+exports.getOrderByIdAdmin = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const order = await Order.findById(id)
+            .populate('user_id', 'full_name email')
+            .populate('items.product_id', 'name image price');
+
+        if (!order) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy đơn hàng'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: order
+        });
+    } catch (error) {
+        console.error('Error getting order:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
