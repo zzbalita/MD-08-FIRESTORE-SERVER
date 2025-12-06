@@ -7,12 +7,17 @@ const jwt = require('jsonwebtoken');
 exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select(
-      'full_name email phone_number avatar_url date_of_birth gender'
+      'full_name email phone_number avatar_url date_of_birth gender address'
     );
 
     if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
-
-    res.json(user);
+    res
+      .status(200)
+      .json({
+        success: true,
+        message: 'Lấy thông tin người dùng thành công',
+        data: user
+      });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Lỗi máy chủ' });
@@ -22,7 +27,7 @@ exports.getMe = async (req, res) => {
 // Cập nhật thông tin cá nhân
 exports.updateProfile = async (req, res) => {
   try {
-    const { full_name, phone_number, date_of_birth, gender, avatar_url } = req.body;
+    const { full_name, phone_number, date_of_birth, gender, avatar_url, address } = req.body;
     const userId = req.user.userId;
 
     // Kiểm tra trùng số điện thoại
@@ -40,10 +45,11 @@ exports.updateProfile = async (req, res) => {
         phone_number,
         date_of_birth,
         gender,
-        avatar_url
+        avatar_url,
+        address
       },
       { new: true, runValidators: true }
-    ).select('full_name phone_number date_of_birth gender avatar_url');
+    ).select('full_name phone_number date_of_birth gender avatar_url address');
 
     // 🔑 Tạo lại token mới
     const token = jwt.sign(
@@ -53,9 +59,9 @@ exports.updateProfile = async (req, res) => {
     );
 
     res.json({
+      success: true,
       message: 'Cập nhật thông tin thành công',
-      user: updated,
-      token // ✅ Trả token mới về
+      data: updated
     });
   } catch (err) {
     console.error('Lỗi khi cập nhật thông tin:', err);
@@ -124,9 +130,9 @@ exports.updateOnlineStatus = async (req, res) => {
     const { is_online } = req.body;
 
     if (typeof is_online !== 'boolean') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Trạng thái online phải là boolean' 
+      return res.status(400).json({
+        success: false,
+        message: 'Trạng thái online phải là boolean'
       });
     }
 
@@ -142,9 +148,9 @@ exports.updateOnlineStatus = async (req, res) => {
     ).select('_id full_name email is_online last_seen');
 
     if (!updatedUser) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Không tìm thấy người dùng' 
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy người dùng'
       });
     }
 
@@ -157,9 +163,9 @@ exports.updateOnlineStatus = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating online status:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Lỗi máy chủ' 
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi máy chủ'
     });
   }
 };
@@ -173,9 +179,9 @@ exports.getOnlineStatus = async (req, res) => {
       role: req.user?.role,
       roleType: typeof req.user?.role
     });
-    
+
     // Lấy danh sách người dùng online
-    const onlineUsers = await User.find({ 
+    const onlineUsers = await User.find({
       is_online: true,
       role: 1 // Chỉ lấy user, không lấy admin
     }).select('_id full_name email last_seen');
@@ -191,10 +197,12 @@ exports.getOnlineStatus = async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting online status:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Lỗi máy chủ' 
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi máy chủ'
     });
   }
+
+  // End of file
 };
 

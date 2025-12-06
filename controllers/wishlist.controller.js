@@ -13,7 +13,7 @@ exports.getMyWishlist = async (req, res) => {
       product: product,
       created_at: new Date().toISOString()
     }));
-
+    console.log(wishlistItems);
     res.status(200).json({
       success: true,
       message: 'Lấy danh sách yêu thích thành công',
