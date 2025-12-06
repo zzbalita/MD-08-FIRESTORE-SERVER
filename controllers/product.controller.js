@@ -67,6 +67,11 @@ exports.getAllProducts = async (req, res) => {
       filter.category = { $regex: `^${req.query.category}$`, $options: 'i' }; // Tìm theo danh mục (không phân biệt hoa thường)
     }
 
+    // Lọc theo 'brand'
+    if (req.query.brand) {
+      filter.brand = { $regex: `^${req.query.brand}$`, $options: 'i' }; // Tìm theo thương hiệu
+    }
+
     // Lọc theo 'name' (tìm kiếm theo tên sản phẩm)
     if (req.query.name) {
       filter.name = { $regex: req.query.name, $options: 'i' }; // Tìm kiếm theo tên sản phẩm
@@ -525,17 +530,17 @@ exports.restockProduct = async (req, res) => {
 exports.getNewestProducts = async (req, res) => {
   try {
     const { limit = 5, category } = req.query;
-    
+
     const filter = {};
-    
+
     // Lọc theo category nếu có
     if (category) {
       filter.category = { $regex: `^${category}$`, $options: 'i' };
     }
-    
+
     // Chỉ lấy sản phẩm đang bán
     filter.status = "Đang bán";
-    
+
     const products = await Product.aggregate([
       { $match: filter },
       { $sort: { createdAt: -1 } }, // Sắp xếp theo ngày tạo mới nhất
