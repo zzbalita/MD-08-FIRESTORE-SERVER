@@ -1,0 +1,12 @@
+    } catch (e) {
+      console.log('Cart clear error (ignored)', e);
+    }
+
+    // Populate product_id to match client expectation
+    await order.populate('items.product_id', 'name image price');
+
+    res.status(200).json({
+      success: true,
+      message: 'Đặt hàng thành công!',
+      data: order
+    });

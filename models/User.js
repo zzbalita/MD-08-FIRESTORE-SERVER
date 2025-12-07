@@ -11,7 +11,7 @@ const Users = new Schema({
     unique: true,
     lowercase: true,
     trim: true,
-    match: [/.+@.+\..+/, 'Email không hợp lệ']
+    match: [/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/, 'Email không hợp lệ']
   },
 
 
@@ -67,12 +67,12 @@ const Users = new Schema({
     type: Boolean,
     default: false
   },
-  
+
   last_seen: {
     type: Date,
     default: Date.now
   },
-  
+
   socket_id: {
     type: String,
     default: null

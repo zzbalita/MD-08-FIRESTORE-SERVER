@@ -66,11 +66,11 @@ class ChatAPI {
     if (!message || !message.trim()) {
       throw new Error('Message content is required');
     }
-    
+
     if (message.length > 2000) {
       throw new Error('Message too long (max 2000 characters)');
     }
-    
+
     return message.trim();
   }
 
@@ -79,7 +79,7 @@ class ChatAPI {
     if (!user) {
       throw new Error('User not authenticated');
     }
-    
+
     if (sessionId && sessionId.includes('admin_')) {
       // Check if user owns this admin chat session
       const sessionUserId = sessionId.split('_')[1]; // Extract user ID from session ID (admin_${userId})
@@ -87,7 +87,7 @@ class ChatAPI {
         throw new Error('Access denied to this admin chat session');
       }
     }
-    
+
     return true;
   }
 
@@ -96,7 +96,7 @@ class ChatAPI {
     if (type === 'admin' && userId) {
       return `admin_${userId}`;
     }
-    
+
     const timestamp = Date.now();
     const random = Math.random().toString(36).substr(2, 15);
     return `${type}_session_${timestamp}_${random}`;

@@ -33,6 +33,12 @@ exports.register = async (req, res) => {
   } catch (err) {
     console.error("Lỗi register:", err);
     res.status(500).json({ message: "Lỗi server" });
+    // await sendMail(email, "Xác minh tài khoản - FireStore", html);
+    console.log(otp);
+    res.json({ message: "Đã gửi mã OTP xác minh tới email", email });
+  } catch (error) {
+    console.error("Lỗi gửi OTP:", error);
+    res.status(500).json({ message: "Không thể gửi mã OTP" });
   }
 };
 
@@ -51,6 +57,13 @@ exports.verifyOtp = async (req, res) => {
     if (otpDoc.code.trim() !== otp.trim()) {
       console.log(`OTP không đúng: gửi ${otp}, DB ${otpDoc.code}`);
       return res.status(400).json({ success: false, message: "OTP không đúng" });
+    console.log(email, otp, full_name, password);
+    // 1. Tìm mã OTP hợp lệ
+    const otpDoc = await OtpCode.findOne({ email, code: otp });
+
+    if (!otpDoc || otpDoc.expiresAt < Date.now()) {
+      console.log("Mã OTP không hợp lệ hoặc đã hết hạn");
+      return res.status(400).json({ message: "Mã OTP không hợp lệ hoặc đã hết hạn" });
     }
 
     // Kiểm tra hết hạn
@@ -63,6 +76,8 @@ exports.verifyOtp = async (req, res) => {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ success: false, message: "Tài khoản đã tồn tại, vui lòng đăng nhập" });
+      console.log("Tài khoản đã tồn tại, vui lòng đăng nhập");
+      return res.status(400).json({ message: "Tài khoản đã tồn tại, vui lòng đăng nhập" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -102,6 +117,9 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ success: false, message: "Email hoặc mật khẩu không đúng" });
+    if (!user) {
+      return res.status(400).json({ message: "Email ko tồn tại" });
+    }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ success: false, message: "Email hoặc mật khẩu không đúng" });

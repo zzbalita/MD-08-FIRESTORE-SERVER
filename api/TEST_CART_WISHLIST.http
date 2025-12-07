@@ -1,0 +1,23 @@
+### Test Add to Wishlist
+POST http://localhost:5001/api/wishlists
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2NzRhNjkzYjEzMGNiNjI4MzgyMGQ2MjgiLCJpYXQiOjE3MzMxMzU0MjgsImV4cCI6MTczMzIyMTgyOH0.5xGfqLlIqkRqYVxQONDhWqjLDp-oBXLWHOxUxFGjNLI
+Content-Type: application/json
+
+{
+  "productId": "674a1234567890abcdef1234"
+}
+
+### Test Add to Cart
+POST http://localhost:5001/api/cart
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2NzRhNjkzYjEzMGNiNjI4MzgyMGQ2MjgiLCJpYXQiOjE3MzMxMzU0MjgsImV4cCI6MTczMzIyMTgyOH0.5xGfqLlIqkRqYVxQONDhWqjLDp-oBXLWHOxUxFGjNLI
+Content-Type: application/json
+
+{
+  "product_id": "674a1234567890abcdef1234",
+  "name": "Áo thun test",
+  "image": "https://example.com/image.jpg",
+  "size": "M",
+  "color": "Đỏ",
+  "quantity": 1,
+  "price": 200000
+}
