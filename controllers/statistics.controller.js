@@ -20,91 +20,103 @@ exports.getProductStatistics = async (req, res) => {
     // ===== 1. Lấy số liệu tổng =====
     const totalProducts = await Product.countDocuments();
 
-    // 2. Tổng tồn kho (cộng tất cả quantity trong variations)
-    const stockData = await Product.aggregate([
-      { $unwind: "$variations" },
-      { $group: { _id: null, totalStock: { $sum: "$variations.quantity" } } }
-    ]);
-    const totalStock = stockData.length > 0 ? stockData[0].totalStock : 0;
+    // 2. Tổng tồn kho
+    const allProducts = await Product.find({});
+    const totalStock = allProducts.reduce((sum, p) => sum + (p.quantity || 0), 0);
 
-    // 3. Số sản phẩm sắp hết hàng (ít nhất một biến thể có số lượng < threshold)
+    // 3. Số sản phẩm sắp hết hàng (quantity < threshold và > 0)
     const lowStockCount = await Product.countDocuments({
-      "variations.quantity": { $lt: parseInt(lowStockThreshold) }
+      quantity: { $lt: parseInt(lowStockThreshold), $gt: 0 }
     });
+
     // 4. Số sản phẩm đã hết hàng
     const outOfStockCount = await Product.countDocuments({
       status: "Hết hàng"
     });
-    // ===== 2. Thống kê sản phẩm bán chạy =====
-    const validStatuses = ['delivered'];
-    const matchOrder = { status: { $in: validStatuses } };
 
-    if (from || to) {
-      matchOrder.createdAt = {};
-      if (from) matchOrder.createdAt.$gte = new Date(from);
-      if (to) matchOrder.createdAt.$lte = new Date(to);
-    }
-
-    const pipeline = [
-      { $match: matchOrder },
-      { $unwind: '$items' },
-      {
-        $group: {
-          _id: '$items.product_id',
-          totalSold: { $sum: '$items.quantity' },
-          totalRevenue: { $sum: { $multiply: ['$items.quantity', '$items.price'] } }
-        }
-      },
-      {
-        $lookup: {
-          from: 'products',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'product'
-        }
-      },
-      { $unwind: '$product' }
-    ];
-
+    // ===== 2. Lấy danh sách sản phẩm với thông tin bán hàng =====
+    let productMatch = {};
     if (status) {
-      pipeline.push({
-        $match: { 'product.status': status }
-      });
+      productMatch.status = status;
     }
 
-    pipeline.push({
-      $addFields: {
-        stock: '$product.quantity',
-        name: '$product.name',
-        image: '$product.image',
-        category: '$product.category',
-        status: '$product.status'
+    // Lấy tất cả sản phẩm
+    let products = await Product.find(productMatch)
+      .select('name image images category status price import_price quantity sold')
+      .lean();
+
+    // Nếu có filter theo thời gian, tính lại sold và revenue từ orders
+    if (from || to) {
+      const orderMatch = { status: 'delivered' };
+      if (from || to) {
+        orderMatch.createdAt = {};
+        if (from) orderMatch.createdAt.$gte = new Date(from);
+        if (to) orderMatch.createdAt.$lte = new Date(to);
       }
+
+      const salesData = await Order.aggregate([
+        { $match: orderMatch },
+        { $unwind: '$items' },
+        {
+          $group: {
+            _id: '$items.product_id',
+            totalSold: { $sum: '$items.quantity' },
+            totalRevenue: { $sum: { $multiply: ['$items.quantity', '$items.price'] } }
+          }
+        }
+      ]);
+
+      // Map sales data to products
+      const salesMap = {};
+      salesData.forEach(s => {
+        salesMap[s._id.toString()] = {
+          totalSold: s.totalSold,
+          totalRevenue: s.totalRevenue
+        };
+      });
+
+      products = products.map(p => ({
+        ...p,
+        totalSold: salesMap[p._id.toString()]?.totalSold || 0,
+        totalRevenue: salesMap[p._id.toString()]?.totalRevenue || 0,
+        stock: p.quantity
+      }));
+    } else {
+      // Không có filter thời gian, dùng sold từ product model
+      products = products.map(p => ({
+        ...p,
+        totalSold: p.sold || 0,
+        totalRevenue: (p.sold || 0) * (p.price || 0),
+        stock: p.quantity
+      }));
+    }
+
+    // ===== 3. Sắp xếp =====
+    products.sort((a, b) => {
+      let compareValue = 0;
+      switch (sortBy) {
+        case 'sold':
+          compareValue = b.totalSold - a.totalSold;
+          break;
+        case 'revenue':
+          compareValue = b.totalRevenue - a.totalRevenue;
+          break;
+        case 'stock':
+          compareValue = b.stock - a.stock;
+          break;
+        case 'name':
+          compareValue = a.name.localeCompare(b.name, 'vi');
+          break;
+        default:
+          compareValue = b.totalSold - a.totalSold;
+      }
+      return order === 'asc' ? -compareValue : compareValue;
     });
 
-    let sortField = {};
-    switch (sortBy) {
-      case 'sold':
-        sortField = { totalSold: order === 'asc' ? 1 : -1 };
-        break;
-      case 'revenue':
-        sortField = { totalRevenue: order === 'asc' ? 1 : -1 };
-        break;
-      case 'stock':
-        sortField = { stock: order === 'asc' ? 1 : -1 };
-        break;
-      case 'name':
-        sortField = { name: order === 'asc' ? 1 : -1 };
-        break;
-      default:
-        sortField = { totalSold: -1 };
-    }
-    pipeline.push({ $sort: sortField });
-    pipeline.push({ $limit: parseInt(limit) });
+    // Giới hạn số lượng
+    const topProducts = products.slice(0, parseInt(limit));
 
-    const topProducts = await Order.aggregate(pipeline);
-
-    // ===== 3. Trả kết quả =====
+    // ===== 4. Trả kết quả =====
     res.json({
       summary: {
         totalProducts,

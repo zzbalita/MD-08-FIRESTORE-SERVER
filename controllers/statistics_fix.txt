@@ -1,0 +1,136 @@
+// controllers/statistics.controller.js
+const mongoose = require("mongoose");
+const Order = require('../models/Order');
+const Product = require('../models/Product');
+const User = require('../models/User');
+const Category = require("../models/Category");
+
+exports.getProductStatistics = async (req, res) => {
+  try {
+    const {
+      sortBy = 'sold',
+      order = 'desc',
+      status,
+      from,
+      to,
+      limit = 10,
+      lowStockThreshold = 10
+    } = req.query;
+
+    // ===== 1. Lấy số liệu tổng =====
+    const totalProducts = await Product.countDocuments();
+
+    // 2. Tổng tồn kho
+    const allProducts = await Product.find({});
+    const totalStock = allProducts.reduce((sum, p) => sum + (p.quantity || 0), 0);
+
+    // 3. Số sản phẩm sắp hết hàng (quantity < threshold và > 0)
+    const lowStockCount = await Product.countDocuments({
+      quantity: { $lt: parseInt(lowStockThreshold), $gt: 0 }
+    });
+
+    // 4. Số sản phẩm đã hết hàng
+    const outOfStockCount = await Product.countDocuments({
+      status: "Hết hàng"
+    });
+
+    // ===== 2. Lấy danh sách sản phẩm với thông tin bán hàng =====
+    let productMatch = {};
+    if (status) {
+      productMatch.status = status;
+    }
+
+    // Lấy tất cả sản phẩm
+    let products = await Product.find(productMatch)
+      .select('name image images category status price import_price quantity sold')
+      .lean();
+
+    // Nếu có filter theo thời gian, tính lại sold và revenue từ orders
+    if (from || to) {
+      const orderMatch = { status: 'delivered' };
+      if (from || to) {
+        orderMatch.createdAt = {};
+        if (from) orderMatch.createdAt.$gte = new Date(from);
+        if (to) orderMatch.createdAt.$lte = new Date(to);
+      }
+
+      const salesData = await Order.aggregate([
+        { $match: orderMatch },
+        { $unwind: '$items' },
+        {
+          $group: {
+            _id: '$items.product_id',
+            totalSold: { $sum: '$items.quantity' },
+            totalRevenue: { $sum: { $multiply: ['$items.quantity', '$items.price'] } }
+          }
+        }
+      ]);
+
+      // Map sales data to products
+      const salesMap = {};
+      salesData.forEach(s => {
+        salesMap[s._id.toString()] = {
+          totalSold: s.totalSold,
+          totalRevenue: s.totalRevenue
+        };
+      });
+
+      products = products.map(p => ({
+        ...p,
+        totalSold: salesMap[p._id.toString()]?.totalSold || 0,
+        totalRevenue: salesMap[p._id.toString()]?.totalRevenue || 0,
+        stock: p.quantity
+      }));
+    } else {
+      // Không có filter thời gian, dùng sold từ product model
+      products = products.map(p => ({
+        ...p,
+        totalSold: p.sold || 0,
+        totalRevenue: (p.sold || 0) * (p.price || 0),
+        stock: p.quantity
+      }));
+    }
+
+    // ===== 3. Sắp xếp =====
+    products.sort((a, b) => {
+      let compareValue = 0;
+      switch (sortBy) {
+        case 'sold':
+          compareValue = b.totalSold - a.totalSold;
+          break;
+        case 'revenue':
+          compareValue = b.totalRevenue - a.totalRevenue;
+          break;
+        case 'stock':
+          compareValue = b.stock - a.stock;
+          break;
+        case 'name':
+          compareValue = a.name.localeCompare(b.name, 'vi');
+          break;
+        default:
+          compareValue = b.totalSold - a.totalSold;
+      }
+      return order === 'asc' ? -compareValue : compareValue;
+    });
+
+    // Giới hạn số lượng
+    const topProducts = products.slice(0, parseInt(limit));
+
+    // ===== 4. Trả kết quả =====
+    res.json({
+      summary: {
+        totalProducts,
+        totalStock,
+        lowStockCount,
+        outOfStockCount,
+      },
+      topProducts
+    });
+
+  } catch (err) {
+    console.error('Lỗi khi thống kê sản phẩm:', err);
+    res.status(500).json({ message: 'Không thể thống kê sản phẩm.' });
+  }
+};
+
+// Copy phần còn lại từ file gốc...
