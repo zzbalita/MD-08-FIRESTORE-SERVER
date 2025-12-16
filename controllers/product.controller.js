@@ -2,11 +2,10 @@ const Product = require("../models/Product");
 const cloudinary = require("../utils/cloudinary");
 const path = require("path");
 const mongoose = require("mongoose");
-const jwt = require('jsonwebtoken');
-const wishlistService = require('../services/wishlist.service');
+const jwt = require("jsonwebtoken");
+const wishlistService = require("../services/wishlist.service");
 const Comment = require("../models/Comment");
 const Order = require("../models/Order");
-
 
 // Kiểm tra có dùng Cloudinary không
 const useCloudinary = process.env.USE_CLOUDINARY === "true";
@@ -14,7 +13,7 @@ const useCloudinary = process.env.USE_CLOUDINARY === "true";
 // Lấy đường dẫn URL đúng cho ảnh (local hoặc cloud)
 function getImageUrl(file) {
   if (useCloudinary) return file.path; // Cloudinary trả link
-  return `/uploads/${file.filename}`;   // Local
+  return `/uploads/${file.filename}`; // Local
 }
 
 // Lấy public_id từ link Cloudinary để xoá
@@ -24,57 +23,88 @@ function extractPublicId(url) {
   const folder = "firestore";
   return `${folder}/${filename}`;
 }
+const removeVietnameseTones = (str) => {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
+};
 
 exports.searchProducts = async (req, res) => {
   try {
     const { name, category, sort } = req.query;
-    const filter = {};
 
-    // lọc
-    if (name) filter.name = { $regex: name, $options: 'i' };
-    if (category) filter.category = { $regex: `^${category}$`, $options: 'i' };
+    let products;
 
-    // sắp xếp
-    let sortOption = { createdAt: -1 };
-    if (sort === "name_asc") sortOption = { name: 1 };
-    if (sort === "name_desc") sortOption = { name: -1 };
-    if (sort === "price_asc") sortOption = { price: 1 };
-    if (sort === "price_desc") sortOption = { price: -1 };
+    if (name) {
+      // Có tìm kiếm theo tên
+      const normalizedSearch = removeVietnameseTones(name);
 
-    const products = await Product.find(filter)
-      .collation({ locale: 'vi', strength: 1 })
-      .sort(sortOption);
+      // Lấy tất cả products (hoặc filter theo category trước nếu có)
+      const filter = {};
+      if (category)
+        filter.category = { $regex: `^${category}$`, $options: "i" };
+
+      const allProducts = await Product.find(filter);
+
+      // Filter bằng JavaScript - so sánh không dấu
+      products = allProducts.filter((product) => {
+        const normalizedName = removeVietnameseTones(product.name);
+        return normalizedName.includes(normalizedSearch);
+      });
+    } else {
+      // Không có search name, query MongoDB bình thường
+      const filter = {};
+      if (category)
+        filter.category = { $regex: `^${category}$`, $options: "i" };
+      products = await Product.find(filter);
+    }
+
+    // Sắp xếp
+    if (sort === "name_asc") {
+      products.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sort === "name_desc") {
+      products.sort((a, b) => b.name.localeCompare(a.name));
+    } else if (sort === "price_asc") {
+      products.sort((a, b) => a.price - b.price);
+    } else if (sort === "price_desc") {
+      products.sort((a, b) => b.price - a.price);
+    } else {
+      // Mặc định sắp xếp theo createdAt mới nhất
+      products.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
 
     res.json(products);
   } catch (err) {
-    console.error('Lỗi khi tìm kiếm:', err);
-    res.status(500).json({ message: 'Lỗi server khi tìm kiếm' });
+    console.error("Lỗi khi tìm kiếm:", err);
+    res.status(500).json({ message: "Lỗi server khi tìm kiếm" });
   }
 };
-
 // Lấy tất cả sản phẩm
 exports.getAllProducts = async (req, res) => {
   try {
     const filter = {};
 
     // Lọc theo 'featured'
-    if (req.query.featured === 'true') {
+    if (req.query.featured === "true") {
       filter.is_featured = true;
     }
 
     // Lọc theo 'category'
     if (req.query.category) {
-      filter.category = { $regex: `^${req.query.category}$`, $options: 'i' }; // Tìm theo danh mục (không phân biệt hoa thường)
+      filter.category = { $regex: `^${req.query.category}$`, $options: "i" }; // Tìm theo danh mục (không phân biệt hoa thường)
     }
 
     // Lọc theo 'brand'
     if (req.query.brand) {
-      filter.brand = { $regex: `^${req.query.brand}$`, $options: 'i' }; // Tìm theo thương hiệu
+      filter.brand = { $regex: `^${req.query.brand}$`, $options: "i" }; // Tìm theo thương hiệu
     }
 
     // Lọc theo 'name' (tìm kiếm theo tên sản phẩm)
     if (req.query.name) {
-      filter.name = { $regex: req.query.name, $options: 'i' }; // Tìm kiếm theo tên sản phẩm
+      filter.name = { $regex: req.query.name, $options: "i" }; // Tìm kiếm theo tên sản phẩm
     }
 
     const products = await Product.aggregate([
@@ -82,27 +112,37 @@ exports.getAllProducts = async (req, res) => {
       { $sort: { createdAt: -1 } },
       {
         $lookup: {
-          from: 'comments',
-          let: { pid: '$_id' },
+          from: "comments",
+          let: { pid: "$_id" },
           pipeline: [
-            { $match: { $expr: { $eq: ['$product_id', '$$pid'] } } },
-            { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
+            { $match: { $expr: { $eq: ["$product_id", "$$pid"] } } },
+            {
+              $group: {
+                _id: null,
+                avg: { $avg: "$rating" },
+                count: { $sum: 1 },
+              },
+            },
           ],
-          as: 'ratingDoc'
-        }
+          as: "ratingDoc",
+        },
       },
-      { $addFields: { _r: { $first: '$ratingDoc' } } },
+      { $addFields: { _r: { $first: "$ratingDoc" } } },
       {
         $addFields: {
-          ratingAvg: { $round: [{ $ifNull: ['$_r.avg', 0] }, 1] },
-          ratingCount: { $ifNull: ['$_r.count', 0] },
-        }
+          ratingAvg: { $round: [{ $ifNull: ["$_r.avg", 0] }, 1] },
+          ratingCount: { $ifNull: ["$_r.count", 0] },
+        },
       },
       { $project: { ratingDoc: 0, _r: 0 } },
-    ]).collation({ locale: 'vi', strength: 1 });
+    ]).collation({ locale: "vi", strength: 1 });
 
     if (products.length === 0) {
-      return res.status(404).json({ message: "Không tìm thấy sản phẩm phù hợp với yêu cầu tìm kiếm." });
+      return res
+        .status(404)
+        .json({
+          message: "Không tìm thấy sản phẩm phù hợp với yêu cầu tìm kiếm.",
+        });
     }
 
     res.json(products); // Trả về danh sách sản phẩm tìm được
@@ -112,20 +152,17 @@ exports.getAllProducts = async (req, res) => {
   }
 };
 
-
-
-
-
 // Lấy sản phẩm theo ID
 exports.getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
+    if (!product)
+      return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
 
     // Tính rating cho sản phẩm
     const agg = await Comment.aggregate([
       { $match: { product_id: new mongoose.Types.ObjectId(product._id) } },
-      { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
+      { $group: { _id: null, avg: { $avg: "$rating" }, count: { $sum: 1 } } },
     ]);
     const ratingAvg = Number((agg[0]?.avg || 0).toFixed(1));
     const ratingCount = agg[0]?.count || 0;
@@ -134,11 +171,14 @@ exports.getProductById = async (req, res) => {
     let isFavorite = false;
     try {
       const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split(' ')[1];
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const token = authHeader.split(" ")[1];
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         if (decoded?.userId) {
-          isFavorite = await wishlistService.isInWishlist(decoded.userId, product._id);
+          isFavorite = await wishlistService.isInWishlist(
+            decoded.userId,
+            product._id
+          );
         }
       }
     } catch (_) {
@@ -177,7 +217,9 @@ exports.createProduct = async (req, res) => {
     } = req.body;
 
     if (!name || !category || !brand)
-      return res.status(400).json({ message: "Tên, danh mục và thương hiệu là bắt buộc." });
+      return res
+        .status(400)
+        .json({ message: "Tên, danh mục và thương hiệu là bắt buộc." });
 
     const priceNum = Number(price);
     if (!price || isNaN(priceNum) || priceNum <= 0)
@@ -191,10 +233,14 @@ exports.createProduct = async (req, res) => {
     if (description) {
       try {
         parsedDescription = JSON.parse(description);
-        const ok = Array.isArray(parsedDescription) && parsedDescription.every(d => d.field && d.value);
+        const ok =
+          Array.isArray(parsedDescription) &&
+          parsedDescription.every((d) => d.field && d.value);
         if (!ok) throw new Error();
       } catch {
-        return res.status(400).json({ message: "Trường description không hợp lệ." });
+        return res
+          .status(400)
+          .json({ message: "Trường description không hợp lệ." });
       }
     }
 
@@ -202,14 +248,21 @@ exports.createProduct = async (req, res) => {
     if (variationsRaw) {
       try {
         variations = JSON.parse(variationsRaw);
-        const ok = Array.isArray(variations) && variations.every(v => v.color && v.size && !isNaN(v.quantity));
+        const ok =
+          Array.isArray(variations) &&
+          variations.every((v) => v.color && v.size && !isNaN(v.quantity));
         if (!ok) throw new Error();
       } catch {
-        return res.status(400).json({ message: "Trường variations không hợp lệ." });
+        return res
+          .status(400)
+          .json({ message: "Trường variations không hợp lệ." });
       }
     }
 
-    const totalQuantity = variations.reduce((sum, v) => sum + Number(v.quantity), 0);
+    const totalQuantity = variations.reduce(
+      (sum, v) => sum + Number(v.quantity),
+      0
+    );
     let statusValue = req.body.status || "Đang bán"; // cho phép admin truyền status thủ công
 
     // Nếu admin không set "Ngừng bán" thì tự động tính toán theo tồn kho
@@ -221,7 +274,6 @@ exports.createProduct = async (req, res) => {
       }
     }
 
-
     if (!req.files?.image?.[0])
       return res.status(400).json({ message: "Phải có ảnh đại diện (image)." });
 
@@ -231,7 +283,7 @@ exports.createProduct = async (req, res) => {
     if (extraImgs.length > 6)
       return res.status(400).json({ message: "Tối đa 6 ảnh bổ sung." });
 
-    const images = extraImgs.map(file => getImageUrl(file));
+    const images = extraImgs.map((file) => getImageUrl(file));
 
     const product = await Product.create({
       name: name.trim(),
@@ -245,7 +297,8 @@ exports.createProduct = async (req, res) => {
       brand: brand.trim(),
       variations,
       status: status.trim(),
-      is_featured: req.body.is_featured === 'true' || req.body.is_featured === true,
+      is_featured:
+        req.body.is_featured === "true" || req.body.is_featured === true,
     });
 
     res.status(201).json(product);
@@ -293,7 +346,9 @@ exports.updateProduct = async (req, res) => {
         }
         for (const v of parsedVariations) {
           if (!v.color || !v.size || isNaN(v.quantity)) {
-            return res.status(400).json({ message: "Variation thiếu thông tin." });
+            return res
+              .status(400)
+              .json({ message: "Variation thiếu thông tin." });
           }
         }
         updateData.variations = parsedVariations;
@@ -319,7 +374,8 @@ exports.updateProduct = async (req, res) => {
 
     // lấy sản phẩm gốc
     const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: "Sản phẩm không tồn tại." });
+    if (!product)
+      return res.status(404).json({ message: "Sản phẩm không tồn tại." });
 
     // ❗ Check có đơn hàng nào chứa sản phẩm này không
     const hasOrder = await Order.exists({ "items.product_id": product._id });
@@ -356,7 +412,9 @@ exports.updateProduct = async (req, res) => {
       try {
         imagesToRemove = JSON.parse(req.body.imagesToRemove);
       } catch {
-        return res.status(400).json({ message: "imagesToRemove không hợp lệ." });
+        return res
+          .status(400)
+          .json({ message: "imagesToRemove không hợp lệ." });
       }
 
       updatedImages = updatedImages.filter(
@@ -417,12 +475,16 @@ exports.toggleFeatured = async (req, res) => {
 
   try {
     const product = await Product.findById(id);
-    if (!product) return res.status(404).json({ message: "Không tìm thấy sản phẩm." });
+    if (!product)
+      return res.status(404).json({ message: "Không tìm thấy sản phẩm." });
 
     product.is_featured = !product.is_featured;
     await product.save();
 
-    res.json({ message: "Cập nhật trạng thái nổi bật thành công.", is_featured: product.is_featured });
+    res.json({
+      message: "Cập nhật trạng thái nổi bật thành công.",
+      is_featured: product.is_featured,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Lỗi server." });
@@ -453,13 +515,15 @@ exports.restockProduct = async (req, res) => {
     // 1) items: [{ color, size, quantity }] (cho SP có variations)
     // 2) quantity: number (cho SP KHÔNG có variations)
     // allowNew: cho phép thêm biến thể mới
-    const { items, quantity, allowNew = false, import_price } = req.body;  // ✅ thêm import_price
+    const { items, quantity, allowNew = false, import_price } = req.body; // ✅ thêm import_price
 
     const product = await Product.findById(id);
-    if (!product) return res.status(404).json({ message: "Sản phẩm không tồn tại." });
+    if (!product)
+      return res.status(404).json({ message: "Sản phẩm không tồn tại." });
 
     // Nếu có gửi import_price mới → cập nhật
-    if (import_price !== undefined) {   // kiểm tra đúng cách
+    if (import_price !== undefined) {
+      // kiểm tra đúng cách
       const newImportPrice = Number(import_price);
       if (!isNaN(newImportPrice) && newImportPrice > 0) {
         product.import_price = newImportPrice;
@@ -469,23 +533,27 @@ exports.restockProduct = async (req, res) => {
     }
 
     // ===== phần xử lý variations hoặc quantity =====
-    const hasVariations = Array.isArray(product.variations) && product.variations.length > 0;
+    const hasVariations =
+      Array.isArray(product.variations) && product.variations.length > 0;
 
     if (hasVariations) {
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({
-          message: "Sản phẩm có biến thể. Hãy gửi 'items: [{color,size,quantity}]' để nhập hàng."
+          message:
+            "Sản phẩm có biến thể. Hãy gửi 'items: [{color,size,quantity}]' để nhập hàng.",
         });
       }
 
       for (const it of items) {
         const addQty = Number(it.quantity);
         if (!it.color || !it.size || !Number.isFinite(addQty) || addQty <= 0) {
-          return res.status(400).json({ message: "Mỗi item cần color, size và quantity > 0." });
+          return res
+            .status(400)
+            .json({ message: "Mỗi item cần color, size và quantity > 0." });
         }
 
         const idx = product.variations.findIndex(
-          v => v.color === it.color && v.size === it.size
+          (v) => v.color === it.color && v.size === it.size
         );
 
         if (idx >= 0) {
@@ -494,21 +562,25 @@ exports.restockProduct = async (req, res) => {
           product.variations.push({
             color: it.color,
             size: it.size,
-            quantity: addQty
+            quantity: addQty,
           });
         } else {
           return res.status(400).json({
-            message: `Biến thể ${it.color}-${it.size} chưa tồn tại. Bật 'allowNew' để tự thêm.`
+            message: `Biến thể ${it.color}-${it.size} chưa tồn tại. Bật 'allowNew' để tự thêm.`,
           });
         }
       }
 
-      product.quantity = product.variations.reduce((s, v) => s + Number(v.quantity || 0), 0);
+      product.quantity = product.variations.reduce(
+        (s, v) => s + Number(v.quantity || 0),
+        0
+      );
     } else {
       const addQty = Number(quantity);
       if (!Number.isFinite(addQty) || addQty <= 0) {
         return res.status(400).json({
-          message: "Truyền 'quantity' là số dương để nhập hàng cho sản phẩm không có biến thể."
+          message:
+            "Truyền 'quantity' là số dương để nhập hàng cho sản phẩm không có biến thể.",
         });
       }
       product.quantity = Number(product.quantity || 0) + addQty;
@@ -535,7 +607,7 @@ exports.getNewestProducts = async (req, res) => {
 
     // Lọc theo category nếu có
     if (category) {
-      filter.category = { $regex: `^${category}$`, $options: 'i' };
+      filter.category = { $regex: `^${category}$`, $options: "i" };
     }
 
     // Chỉ lấy sản phẩm đang bán
@@ -547,29 +619,34 @@ exports.getNewestProducts = async (req, res) => {
       { $limit: parseInt(limit) },
       {
         $lookup: {
-          from: 'comments',
-          let: { pid: '$_id' },
+          from: "comments",
+          let: { pid: "$_id" },
           pipeline: [
-            { $match: { $expr: { $eq: ['$product_id', '$$pid'] } } },
-            { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
+            { $match: { $expr: { $eq: ["$product_id", "$$pid"] } } },
+            {
+              $group: {
+                _id: null,
+                avg: { $avg: "$rating" },
+                count: { $sum: 1 },
+              },
+            },
           ],
-          as: 'ratingDoc'
-        }
+          as: "ratingDoc",
+        },
       },
-      { $addFields: { _r: { $first: '$ratingDoc' } } },
+      { $addFields: { _r: { $first: "$ratingDoc" } } },
       {
         $addFields: {
-          ratingAvg: { $round: [{ $ifNull: ['$_r.avg', 0] }, 1] },
-          ratingCount: { $ifNull: ['$_r.count', 0] },
-        }
+          ratingAvg: { $round: [{ $ifNull: ["$_r.avg", 0] }, 1] },
+          ratingCount: { $ifNull: ["$_r.count", 0] },
+        },
       },
       { $project: { ratingDoc: 0, _r: 0 } },
-    ]).collation({ locale: 'vi', strength: 1 });
+    ]).collation({ locale: "vi", strength: 1 });
 
     res.json(products);
   } catch (error) {
-    console.error('Lỗi khi lấy sản phẩm mới nhất:', error);
+    console.error("Lỗi khi lấy sản phẩm mới nhất:", error);
     res.status(500).json({ message: "Lỗi khi lấy sản phẩm mới nhất" });
   }
 };
-

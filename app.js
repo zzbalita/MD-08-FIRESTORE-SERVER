@@ -9,6 +9,7 @@ const addressRoutes = require('./routes/address.routes');
 const orderRoutes = require("./routes/order.routes");
 const statisticsRoutes = require('./routes/statistics.routes');
 const notificationRoutes = require("./routes/notification.routes");
+const vnpayRoutes = require("./routes/vnpay.routes");
 
 // Kết nối MongoDB
 connectDB();
@@ -27,20 +28,29 @@ app.use((req, res, next) => {
 
 // CORS cấu hình chuẩn cho cả localhost và vercel
 const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://192.168.1.9:5002",
-    "http://192.168.1.2:5002",
-    "http://localhost:5002",
-    "http://10.158.14.189",
-    "http://localhost:5003",
-    "https://md-08-firestore-admin.vercel.app/"
+  origin: function (origin, callback) {
+    // Cho phép Android (origin = undefined)
+    if (!origin) return callback(null, true);
 
-  ],
+    const allowedOrigins = [
+      "http://localhost:3000",
+      "http://192.168.1.9:5002",
+      "http://192.168.1.2:5002",
+      "http://localhost:5002",
+      "http://10.158.14.189",
+      "http://localhost:5003",
+      "https://md-08-firestore-admin.vercel.app"
+    ];
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  allowedHeaders: ["Content-Type", "Authorization"],
 };
+
 app.use(cors(corsOptions));
 
 // Các middleware cần thiết
@@ -59,6 +69,9 @@ if (!isProduction) {
 }
 
 // Các routes
+//VNPay
+app.use("/api/vnpay", vnpayRoutes);
+
 app.use("/", require("./routes/index"));
 app.use("/api/admin", require("./routes/admin.routes"));
 app.use("/api/products", require("./routes/product.routes"));
