@@ -31,10 +31,13 @@ const corsOptions = {
     "http://localhost:3000",
     "http://192.168.1.9:5002",
     "http://192.168.1.2:5002",
+    "http://192.168.1.4:5001",
+    "http://192.168.1.4:5002",
     "http://localhost:5002",
     "http://10.158.14.189",
     "http://localhost:5003",
-    "https://md-08-firestore-admin.vercel.app/"
+    "https://md-08-firestore-admin.vercel.app/",
+    "http://10.0.2.2:5001/"
 
   ],
   credentials: true,
@@ -61,6 +64,7 @@ if (!isProduction) {
 // Các routes
 app.use("/", require("./routes/index"));
 app.use("/api/admin", require("./routes/admin.routes"));
+app.use("/api/admin/staff", require("./routes/staff.routes"));
 app.use("/api/products", require("./routes/product.routes"));
 app.use("/api/categories", require("./routes/category.routes"));
 app.use("/api/brands", require("./routes/brand.routes"));

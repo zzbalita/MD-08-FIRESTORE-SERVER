@@ -18,10 +18,12 @@ const io = new Server(server, {
       "http://localhost:3000",
       "http://localhost:19006",     
       "*",
+      "http://192.168.1.4:5001",
       "http://192.168.1.9:5002",
       "http://192.168.1.2:5002",
       "http://localhost:5002",
       "http://10.158.14.189",
+      "http://192.168.1.4:5002",
       "exp://192.168.1.9:8081", // Expo development server
       "exp://localhost:8081"  
       ,   // Expo local development
