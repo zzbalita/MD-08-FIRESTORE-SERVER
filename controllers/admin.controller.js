@@ -1,97 +1,160 @@
 const Admin = require("../models/Admin");
+const Staff = require("../models/Staff");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const OtpCode = require("../models/otp.model");
 const sendMail = require("../utils/sendMail");
 
-// ĐĂNG KÝ
+// ĐĂNG KÝ - Tất cả đăng ký mới đều vào Staff collection
 exports.register = async (req, res) => {
   const { username, password, name, email, phone } = req.body;
+  const normalizedPhone = (phone || "").trim();
+  const normalizedEmail = (email || "").trim().toLowerCase();
+  const normalizedName = (name || "").trim();
+  const normalizedUsername = (username || normalizedPhone || "").trim();
+
+  if (!normalizedPhone || !password || !normalizedEmail || !normalizedName) {
+    return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
+  }
 
   try {
-    const existingAdmin = await Admin.findOne({ phone });
-    if (existingAdmin) {
+    // Check duplicates in both Admin and Staff collections
+    const existingAdminPhone = await Admin.findOne({ phone: normalizedPhone });
+    const existingStaffPhone = await Staff.findOne({ phone: normalizedPhone });
+    if (existingAdminPhone || existingStaffPhone) {
       return res.status(400).json({ message: "Số điện thoại đã được sử dụng" });
     }
-    const existingEmail = await Admin.findOne({ email });
-    if (existingEmail) {
+
+    const existingAdminEmail = await Admin.findOne({ email: normalizedEmail });
+    const existingStaffEmail = await Staff.findOne({ email: normalizedEmail });
+    if (existingAdminEmail || existingStaffEmail) {
       return res.status(400).json({ message: "Email đã được sử dụng" });
     }
-    const existingUsername = await Admin.findOne({ username });
-    if (existingUsername) {
-      return res.status(400).json({ message: "Username đã tồn tại" });
-    }
 
+    if (normalizedUsername) {
+      const existingAdminUsername = await Admin.findOne({ username: normalizedUsername });
+      const existingStaffUsername = await Staff.findOne({ username: normalizedUsername });
+      if (existingAdminUsername || existingStaffUsername) {
+        return res.status(400).json({ message: "Username đã tồn tại" });
+      }
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const newAdmin = new Admin({
-      username,
+    // Create new staff in Staff collection (NOT Admin)
+    const newStaff = new Staff({
+      username: normalizedUsername,
       password: hashedPassword,
-      name,
-      email,
-      phone,
+      name: normalizedName,
+      email: normalizedEmail,
+      phone: normalizedPhone,
+      role: "staff",
+      status: "pending",
     });
 
-    await newAdmin.save();
-    res.status(201).json({ message: "Đăng ký thành công" });
+    console.log("=== REGISTER DEBUG ===");
+    console.log("Saving to collection:", Staff.collection.name);
+    
+    await newStaff.save();
+    
+    console.log("Saved staff _id:", newStaff._id);
+    console.log("=== END DEBUG ===");
+
+    res.status(201).json({ 
+      message: "Đăng ký thành công! Vui lòng chờ admin phê duyệt trước khi đăng nhập." 
+    });
   } catch (error) {
-    console.error(error);
+    console.error("Register error:", error);
     res.status(500).json({ message: "Lỗi server" });
   }
 };
 
-// // ĐĂNG NHẬP
+// ĐĂNG NHẬP - Check both Admin and Staff collections
 exports.login = async (req, res) => {
-  const { phone, password } = req.body;
+  const { password } = req.body;
+  const phone = (req.body.phone || "").trim();
 
   try {
-    const admin = await Admin.findOne({ phone });
-    if (!admin) return res.status(400).json({ message: "Tài khoản không tồn tại" });
+    // First check Admin collection
+    let account = await Admin.findOne({ phone });
+    let isAdminAccount = true;
+    
+    // If not found in Admin, check Staff collection
+    if (!account) {
+      account = await Staff.findOne({ phone });
+      isAdminAccount = false;
+    }
+    
+    if (!account) {
+      return res.status(400).json({ message: "Tài khoản không tồn tại" });
+    }
 
-    const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch) return res.status(400).json({ message: "Sai mật khẩu" });
+    const isMatch = await bcrypt.compare(password, account.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Sai mật khẩu" });
+    }
+
+    // Check status for staff accounts
+    if (!isAdminAccount) {
+      const status = account.status || "pending";
+      if (status === "pending") {
+        return res.status(403).json({ message: "Tài khoản đang chờ admin phê duyệt" });
+      }
+      if (status === "disabled") {
+        return res.status(403).json({ message: "Tài khoản đã bị vô hiệu hóa" });
+      }
+    }
 
     const token = jwt.sign(
-      { userId: admin._id, role: admin.role },
+      { userId: account._id, role: account.role },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
-
     res.json({
       token,
       admin: {
-        username: admin.username,
-        name: admin.name,
-        phone: admin.phone,
-        email: admin.email,
-        role: admin.role,
+        username: account.username,
+        name: account.name,
+        phone: account.phone,
+        email: account.email,
+        role: account.role,
+        status: account.status || "active",
       },
     });
   } catch (error) {
-    console.error(error);
+    console.error("Login error:", error);
     res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 // ĐỔI MẬT KHẨU
 exports.changePassword = async (req, res) => {
   const { oldPassword, newPassword } = req.body;
-  const adminId = req.user.userId; // Lấy từ middleware xác thực
+  const userId = req.user.userId;
+  const userRole = req.user.role;
 
   try {
-    const admin = await Admin.findById(adminId);
-    if (!admin) return res.status(404).json({ message: "Không tìm thấy admin" });
+    let account;
+    if (userRole === "admin") {
+      account = await Admin.findById(userId);
+    } else {
+      account = await Staff.findById(userId);
+    }
+    
+    if (!account) {
+      return res.status(404).json({ message: "Không tìm thấy tài khoản" });
+    }
 
-    const isMatch = await bcrypt.compare(oldPassword, admin.password);
+    const isMatch = await bcrypt.compare(oldPassword, account.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Mật khẩu cũ không đúng" });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    admin.password = hashedPassword;
-    await admin.save();
+    account.password = hashedPassword;
+    await account.save();
 
     res.json({ message: "Đổi mật khẩu thành công" });
   } catch (error) {
@@ -99,14 +162,18 @@ exports.changePassword = async (req, res) => {
     res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 exports.sendAdminOtp = async (req, res) => {
   const normEmail = String(req.body.email || '').trim().toLowerCase();
   if (!normEmail) return res.status(400).json({ message: "Email là bắt buộc" });
 
-  // 🔍 Cho phép tìm ở Admin hoặc User
+  // Check Admin, Staff, and User
   let account = await Admin.findOne({ email: normEmail });
+  if (!account) {
+    account = await Staff.findOne({ email: normEmail });
+  }
   if (!account && User) {
     account = await User.findOne({ email: normEmail });
   }
@@ -118,7 +185,6 @@ exports.sendAdminOtp = async (req, res) => {
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
   try {
-    // ⚠️ Dùng $set + $setOnInsert để không làm mất email
     await OtpCode.findOneAndUpdate(
       { email: normEmail },
       {
@@ -161,14 +227,17 @@ exports.resetAdminPassword = async (req, res) => {
       return res.status(400).json({ message: "OTP đã hết hạn" });
     }
 
-    // 🔍 Tìm tài khoản ở Admin hoặc User
+    // Check Admin, Staff, User
     let target = await Admin.findOne({ email: normEmail });
-    let isAdmin = true;
+    if (!target) {
+      target = await Staff.findOne({ email: normEmail });
+    }
     if (!target && User) {
       target = await User.findOne({ email: normEmail });
-      isAdmin = false;
     }
-    if (!target) return res.status(404).json({ message: "Không tìm thấy tài khoản" });
+    if (!target) {
+      return res.status(404).json({ message: "Không tìm thấy tài khoản" });
+    }
 
     const hashed = await bcrypt.hash(newPassword, 10);
     target.password = hashed;
@@ -176,7 +245,6 @@ exports.resetAdminPassword = async (req, res) => {
 
     await OtpCode.deleteOne({ email: normEmail });
 
-    // Tuỳ ý trả khác nhau nếu cần
     return res.json({ message: "✅ Đặt lại mật khẩu thành công" });
   } catch (error) {
     console.error("resetAdminPassword error:", error);

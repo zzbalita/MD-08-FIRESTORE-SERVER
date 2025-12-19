@@ -1,5 +1,6 @@
 const Product = require("../models/Product");
 const cloudinary = require("../utils/cloudinary");
+const fs = require('fs');
 const path = require("path");
 const mongoose = require("mongoose");
 const jwt = require('jsonwebtoken');
@@ -13,8 +14,22 @@ const useCloudinary = process.env.USE_CLOUDINARY === "true";
 
 // Lấy đường dẫn URL đúng cho ảnh (local hoặc cloud)
 function getImageUrl(file) {
-  if (useCloudinary) return file.path; // Cloudinary trả link
-  return `/uploads/${file.filename}`;   // Local
+  if (useCloudinary) return file.path; 
+  return `/uploads/${file.filename}`;   
+}
+
+function deleteTempFiles(files) {
+    if (!useCloudinary) return; 
+
+    const fileList = Array.isArray(files) ? files : [files]; 
+    
+    fileList.forEach(file => {
+        if (file && file.path) {
+            fs.unlink(file.path, (err) => {
+                if (err) console.error("Lỗi khi xoá tệp tạm thời (Cloudinary mode):", err);
+            });
+        }
+    });
 }
 
 // Lấy public_id từ link Cloudinary để xoá
@@ -25,22 +40,36 @@ function extractPublicId(url) {
   return `${folder}/${filename}`;
 }
 
+// =======================================================
+// ⭐ HÀM ĐÃ SỬA LỖI TÌM KIẾM THEO 'q' ⭐
+// =======================================================
 exports.searchProducts = async (req, res) => {
   try {
-    const { name, category, sort } = req.query;
+    // Đã sửa: LẤY CẢ 'q' (từ khóa tìm kiếm từ client)
+    const { q, name, category, sort } = req.query; 
     const filter = {};
 
-    // lọc
-    if (name) filter.name = { $regex: name, $options: 'i' };
+    // 1. LỌC THEO TỪ KHÓA CHÍNH (q)
+    if (q) {
+        // Tìm kiếm không phân biệt chữ hoa/thường trong tên sản phẩm
+        filter.name = { $regex: q, $options: 'i' };
+    } 
+    // Nếu có cả 'name' và 'q', chúng ta ưu tiên 'q' cho tìm kiếm chung.
+    else if (name) {
+        filter.name = { $regex: name, $options: 'i' };
+    }
+    
+    // 2. LỌC THEO DANH MỤC (NẾU CÓ)
     if (category) filter.category = { $regex: `^${category}$`, $options: 'i' };
 
-    // sắp xếp
+    // 3. SẮP XẾP
     let sortOption = { createdAt: -1 };
     if (sort === "name_asc") sortOption = { name: 1 };
     if (sort === "name_desc") sortOption = { name: -1 };
     if (sort === "price_asc") sortOption = { price: 1 };
     if (sort === "price_desc") sortOption = { price: -1 };
 
+    // 4. THỰC HIỆN TRUY VẤN
     const products = await Product.find(filter)
       .collation({ locale: 'vi', strength: 1 })
       .sort(sortOption);
@@ -51,6 +80,9 @@ exports.searchProducts = async (req, res) => {
     res.status(500).json({ message: 'Lỗi server khi tìm kiếm' });
   }
 };
+// =======================================================
+// PHẦN CÒN LẠI CỦA CONTROLLER (Được giữ nguyên)
+// =======================================================
 
 // Lấy tất cả sản phẩm
 exports.getAllProducts = async (req, res) => {
@@ -64,12 +96,12 @@ exports.getAllProducts = async (req, res) => {
 
     // Lọc theo 'category'
     if (req.query.category) {
-      filter.category = { $regex: `^${req.query.category}$`, $options: 'i' }; // Tìm theo danh mục (không phân biệt hoa thường)
+      filter.category = { $regex: `^${req.query.category}$`, $options: 'i' }; 
     }
 
     // Lọc theo 'name' (tìm kiếm theo tên sản phẩm)
     if (req.query.name) {
-      filter.name = { $regex: req.query.name, $options: 'i' }; // Tìm kiếm theo tên sản phẩm
+      filter.name = { $regex: req.query.name, $options: 'i' }; 
     }
 
     const products = await Product.aggregate([
@@ -100,15 +132,12 @@ exports.getAllProducts = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy sản phẩm phù hợp với yêu cầu tìm kiếm." });
     }
 
-    res.json(products); // Trả về danh sách sản phẩm tìm được
+    res.json(products); 
   } catch (err) {
     console.error("Lỗi khi lấy danh sách sản phẩm:", err);
     res.status(500).json({ message: "Lỗi server khi lấy sản phẩm" });
   }
 };
-
-
-
 
 
 // Lấy sản phẩm theo ID
@@ -149,7 +178,7 @@ exports.getProductById = async (req, res) => {
       ratingAvg,
       ratingCount,
       isFavorite,
-      hasOrders: !!hasOrder, //  flag quan trọng
+      hasOrders: !!hasOrder, 
     });
   } catch (err) {
     console.error("Lỗi khi lấy sản phẩm:", err);
@@ -159,17 +188,21 @@ exports.getProductById = async (req, res) => {
 
 // Thêm sản phẩm mới
 exports.createProduct = async (req, res) => {
+  const {
+    name,
+    price,
+    import_price,
+    category,
+    brand,
+    status = "Đang bán",
+    description,
+    variations: variationsRaw,
+  } = req.body;
+
+  let imageFile = req.files?.image?.[0];
+  let extraImgFiles = req.files?.images || [];
+  
   try {
-    const {
-      name,
-      price,
-      import_price,
-      category,
-      brand,
-      status = "Đang bán",
-      description,
-      variations: variationsRaw,
-    } = req.body;
 
     if (!name || !category || !brand)
       return res.status(400).json({ message: "Tên, danh mục và thương hiệu là bắt buộc." });
@@ -205,9 +238,8 @@ exports.createProduct = async (req, res) => {
     }
 
     const totalQuantity = variations.reduce((sum, v) => sum + Number(v.quantity), 0);
-    let statusValue = req.body.status || "Đang bán"; // cho phép admin truyền status thủ công
+    let statusValue = req.body.status || "Đang bán"; 
 
-    // Nếu admin không set "Ngừng bán" thì tự động tính toán theo tồn kho
     if (statusValue !== "Ngừng bán") {
       if (totalQuantity <= 0) {
         statusValue = "Hết hàng";
@@ -217,16 +249,15 @@ exports.createProduct = async (req, res) => {
     }
 
 
-    if (!req.files?.image?.[0])
+    if (!imageFile)
       return res.status(400).json({ message: "Phải có ảnh đại diện (image)." });
 
-    const imageURL = getImageUrl(req.files.image[0]);
+    const imageURL = getImageUrl(imageFile);
 
-    const extraImgs = req.files?.images || [];
-    if (extraImgs.length > 6)
+    if (extraImgFiles.length > 6)
       return res.status(400).json({ message: "Tối đa 6 ảnh bổ sung." });
 
-    const images = extraImgs.map(file => getImageUrl(file));
+    const images = extraImgFiles.map(file => getImageUrl(file));
 
     const product = await Product.create({
       name: name.trim(),
@@ -239,29 +270,36 @@ exports.createProduct = async (req, res) => {
       category: category.trim(),
       brand: brand.trim(),
       variations,
-      status: status.trim(),
+      status: statusValue.trim(), 
       is_featured: req.body.is_featured === 'true' || req.body.is_featured === true,
     });
 
     res.status(201).json(product);
   } catch (err) {
-    console.error("Lỗi khi tạo sản phẩm:", err);
-    res.status(500).json({ message: "Không thể tạo sản phẩm." });
+    console.error("Lỗi khi tạo sản phẩm:", err); 
+    res.status(500).json({ message: `Không thể tạo sản phẩm: ${err.message}` }); 
+  } finally {
+    deleteTempFiles(imageFile);
+    deleteTempFiles(extraImgFiles);
   }
 };
 
 // Cập nhật sản phẩm
 exports.updateProduct = async (req, res) => {
+  const files = {
+    image: req.files?.image?.[0],
+    images: req.files?.images || [],
+  };
+  let product = null;
+
   try {
     const updateData = { ...req.body };
 
-    // ép kiểu boolean cho is_featured
     if (typeof req.body.is_featured !== "undefined") {
       updateData.is_featured =
         req.body.is_featured === "true" || req.body.is_featured === true;
     }
 
-    // validate import_price
     if (req.body.import_price) {
       const importPriceNum = Number(req.body.import_price);
       if (!importPriceNum || isNaN(importPriceNum) || importPriceNum <= 0) {
@@ -270,7 +308,6 @@ exports.updateProduct = async (req, res) => {
       updateData.import_price = importPriceNum;
     }
 
-    // parse description
     if (typeof updateData.description === "string") {
       try {
         updateData.description = JSON.parse(updateData.description);
@@ -279,7 +316,6 @@ exports.updateProduct = async (req, res) => {
       }
     }
 
-    // parse variations
     if (req.body.variations) {
       try {
         const parsedVariations = JSON.parse(req.body.variations);
@@ -301,7 +337,6 @@ exports.updateProduct = async (req, res) => {
       }
     }
 
-    // cập nhật status tự động theo số lượng (trừ khi admin set "Ngừng bán")
     if (typeof updateData.quantity !== "undefined") {
       if (updateData.status !== "Ngừng bán") {
         if (updateData.quantity <= 0) {
@@ -312,11 +347,9 @@ exports.updateProduct = async (req, res) => {
       }
     }
 
-    // lấy sản phẩm gốc
-    const product = await Product.findById(req.params.id);
+    product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Sản phẩm không tồn tại." });
 
-    // ❗ Check có đơn hàng nào chứa sản phẩm này không
     const hasOrder = await Order.exists({ "items.product_id": product._id });
     if (hasOrder) {
       return res
@@ -324,9 +357,8 @@ exports.updateProduct = async (req, res) => {
         .json({ message: "Sản phẩm này đã có đơn hàng, không thể chỉnh sửa!" });
     }
 
-    // xử lý ảnh đại diện
-    if (req.files?.image?.[0]) {
-      const newImage = getImageUrl(req.files.image[0]);
+    if (files.image) {
+      const newImage = getImageUrl(files.image);
       updateData.image = newImage;
 
       if (useCloudinary && product.image?.includes("res.cloudinary.com")) {
@@ -343,7 +375,6 @@ exports.updateProduct = async (req, res) => {
       updateData.image = "";
     }
 
-    // xử lý ảnh bổ sung
     let updatedImages = product.images || [];
 
     if (req.body.imagesToRemove) {
@@ -370,8 +401,8 @@ exports.updateProduct = async (req, res) => {
       }
     }
 
-    if (req.files?.images?.length > 0) {
-      const newImages = req.files.images.map((file) => getImageUrl(file));
+    if (files.images.length > 0) {
+      const newImages = files.images.map((file) => getImageUrl(file));
       if (req.body.imagesMode === "append") {
         updatedImages = [...updatedImages, ...newImages];
       } else {
@@ -380,7 +411,6 @@ exports.updateProduct = async (req, res) => {
     }
     updateData.images = updatedImages;
 
-    // update cuối cùng
     const updated = await Product.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
     });
@@ -389,12 +419,38 @@ exports.updateProduct = async (req, res) => {
   } catch (err) {
     console.error("Lỗi cập nhật sản phẩm:", err);
     res.status(500).json({ message: "Không thể cập nhật sản phẩm." });
+  } finally {
+    deleteTempFiles(files.image);
+    deleteTempFiles(files.images);
   }
 };
 
 // Xoá sản phẩm
 exports.deleteProduct = async (req, res) => {
   try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Sản phẩm không tồn tại." });
+    
+    // Xoá ảnh trên Cloudinary
+    if (useCloudinary) {
+      if (product.image) {
+        try {
+          const publicId = extractPublicId(product.image);
+          await cloudinary.uploader.destroy(publicId);
+        } catch (err) {
+          console.error("Không thể xoá ảnh đại diện cũ:", err.message);
+        }
+      }
+      for (const imgUrl of product.images) {
+          try {
+            const publicId = extractPublicId(imgUrl);
+            await cloudinary.uploader.destroy(publicId);
+          } catch (err) {
+            console.error("Không thể xoá ảnh bổ sung:", err.message);
+          }
+      }
+    }
+    
     await Product.findByIdAndDelete(req.params.id);
     res.json({ message: "Đã xoá sản phẩm" });
   } catch (err) {
@@ -444,17 +500,12 @@ exports.restockProduct = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // payload chấp nhận:
-    // 1) items: [{ color, size, quantity }] (cho SP có variations)
-    // 2) quantity: number (cho SP KHÔNG có variations)
-    // allowNew: cho phép thêm biến thể mới
-    const { items, quantity, allowNew = false, import_price } = req.body;  // ✅ thêm import_price
+    const { items, quantity, allowNew = false, import_price } = req.body;  
 
     const product = await Product.findById(id);
     if (!product) return res.status(404).json({ message: "Sản phẩm không tồn tại." });
 
-    // Nếu có gửi import_price mới → cập nhật
-    if (import_price !== undefined) {   // kiểm tra đúng cách
+    if (import_price !== undefined) { 
       const newImportPrice = Number(import_price);
       if (!isNaN(newImportPrice) && newImportPrice > 0) {
         product.import_price = newImportPrice;
@@ -463,7 +514,6 @@ exports.restockProduct = async (req, res) => {
       }
     }
 
-    // ===== phần xử lý variations hoặc quantity =====
     const hasVariations = Array.isArray(product.variations) && product.variations.length > 0;
 
     if (hasVariations) {
@@ -528,17 +578,15 @@ exports.getNewestProducts = async (req, res) => {
     
     const filter = {};
     
-    // Lọc theo category nếu có
     if (category) {
       filter.category = { $regex: `^${category}$`, $options: 'i' };
     }
     
-    // Chỉ lấy sản phẩm đang bán
     filter.status = "Đang bán";
     
     const products = await Product.aggregate([
       { $match: filter },
-      { $sort: { createdAt: -1 } }, // Sắp xếp theo ngày tạo mới nhất
+      { $sort: { createdAt: -1 } },
       { $limit: parseInt(limit) },
       {
         $lookup: {
@@ -567,4 +615,3 @@ exports.getNewestProducts = async (req, res) => {
     res.status(500).json({ message: "Lỗi khi lấy sản phẩm mới nhất" });
   }
 };
-
