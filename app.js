@@ -53,12 +53,19 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
 // Static folder cho ảnh upload (chỉ dùng ở local)
-if (!isProduction) {
-  const uploadsPath = path.join(__dirname, "tmp", "uploads"); //dùng __dirname
-  app.use("/uploads", express.static(uploadsPath));
-  console.log("=> Đang dùng ảnh local từ", uploadsPath);
+const useCloudinary = process.env.USE_CLOUDINARY === "true";
+
+// Debug: show Cloudinary config status
+console.log("=> USE_CLOUDINARY:", process.env.USE_CLOUDINARY);
+console.log("=> NODE_ENV:", process.env.NODE_ENV);
+console.log("=> CLOUDINARY_CLOUD_NAME:", process.env.CLOUDINARY_CLOUD_NAME);
+
+if (isProduction || useCloudinary) {
+  console.log("=> ✅ Đang dùng Cloudinary để upload ảnh");
 } else {
-  console.log("=> Đang dùng Cloudinary - không cần /uploads");
+  const uploadsPath = path.join(__dirname, "tmp", "uploads");
+  app.use("/uploads", express.static(uploadsPath));
+  console.log("=> ⚠️ Đang dùng ảnh local từ", uploadsPath);
 }
 
 // Các routes
