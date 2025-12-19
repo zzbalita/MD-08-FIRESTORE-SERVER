@@ -33,6 +33,9 @@ const ProductSchema = new mongoose.Schema(
     status: { type: String, default: "Đang bán" },
 
     is_featured: { type: Boolean, default: false },
+    
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

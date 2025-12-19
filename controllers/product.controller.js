@@ -47,7 +47,7 @@ exports.searchProducts = async (req, res) => {
   try {
     // Đã sửa: LẤY CẢ 'q' (từ khóa tìm kiếm từ client)
     const { q, name, category, sort } = req.query; 
-    const filter = {};
+    const filter = { isDeleted: { $ne: true } }; // Lọc bỏ sản phẩm đã xóa
 
     // 1. LỌC THEO TỪ KHÓA CHÍNH (q)
     if (q) {
@@ -87,7 +87,7 @@ exports.searchProducts = async (req, res) => {
 // Lấy tất cả sản phẩm
 exports.getAllProducts = async (req, res) => {
   try {
-    const filter = {};
+    const filter = { isDeleted: { $ne: true } }; // Lọc bỏ sản phẩm đã xóa
 
     // Lọc theo 'featured'
     if (req.query.featured === 'true') {
@@ -143,7 +143,7 @@ exports.getAllProducts = async (req, res) => {
 // Lấy sản phẩm theo ID
 exports.getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findOne({ _id: req.params.id, isDeleted: { $ne: true } });
     if (!product) return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
 
     // Tính rating cho sản phẩm
@@ -425,33 +425,17 @@ exports.updateProduct = async (req, res) => {
   }
 };
 
-// Xoá sản phẩm
+// Xoá sản phẩm (soft delete - chỉ đánh dấu, không xóa thật)
 exports.deleteProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Sản phẩm không tồn tại." });
     
-    // Xoá ảnh trên Cloudinary
-    if (useCloudinary) {
-      if (product.image) {
-        try {
-          const publicId = extractPublicId(product.image);
-          await cloudinary.uploader.destroy(publicId);
-        } catch (err) {
-          console.error("Không thể xoá ảnh đại diện cũ:", err.message);
-        }
-      }
-      for (const imgUrl of product.images) {
-          try {
-            const publicId = extractPublicId(imgUrl);
-            await cloudinary.uploader.destroy(publicId);
-          } catch (err) {
-            console.error("Không thể xoá ảnh bổ sung:", err.message);
-          }
-      }
-    }
+    // Soft delete: đánh dấu isDeleted = true thay vì xóa thật
+    product.isDeleted = true;
+    product.deletedAt = new Date();
+    await product.save();
     
-    await Product.findByIdAndDelete(req.params.id);
     res.json({ message: "Đã xoá sản phẩm" });
   } catch (err) {
     console.error("Lỗi khi xoá sản phẩm:", err);
@@ -487,6 +471,7 @@ exports.getRelatedProductsByCategory = async (req, res) => {
     const products = await Product.find({
       category,
       _id: { $ne: exclude },
+      isDeleted: { $ne: true }, // Lọc bỏ sản phẩm đã xóa
     }).limit(8);
 
     res.json(products);
@@ -576,7 +561,7 @@ exports.getNewestProducts = async (req, res) => {
   try {
     const { limit = 5, category } = req.query;
     
-    const filter = {};
+    const filter = { isDeleted: { $ne: true } }; // Lọc bỏ sản phẩm đã xóa
     
     if (category) {
       filter.category = { $regex: `^${category}$`, $options: 'i' };

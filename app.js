@@ -113,4 +113,4 @@ app.use("/api/chat-new", require("./routes/chatNew.routes"));
 // Upload
 app.use("/api/upload", require("./routes/upload.routes"));
 
-module.exports = app;
+module.exports = app;}
