@@ -7,6 +7,11 @@ const cloudinary = require("cloudinary").v2;
 const isProduction = process.env.NODE_ENV === "production";
 const useCloudinary = process.env.USE_CLOUDINARY === "true"; // ép dùng Cloudinary cả khi local
 
+// Debug log
+console.log("[upload.js] isProduction:", isProduction);
+console.log("[upload.js] useCloudinary:", useCloudinary);
+console.log("[upload.js] CLOUDINARY_CLOUD_NAME:", process.env.CLOUDINARY_CLOUD_NAME);
+
 // Custom Cloudinary storage for multer
 class CloudinaryStorage {
   constructor(options) {
@@ -30,6 +35,7 @@ class CloudinaryStorage {
       stream.push(null);
 
       // Upload to Cloudinary
+      console.log("[Cloudinary] Starting upload...");
       const uploadStream = this.cloudinary.uploader.upload_stream(
         {
           folder: this.params.folder || "firestore",
@@ -39,8 +45,10 @@ class CloudinaryStorage {
         },
         (error, result) => {
           if (error) {
+            console.error("[Cloudinary] ❌ Upload error:", error);
             return cb(error);
           }
+          console.log("[Cloudinary] ✅ Upload success:", result.secure_url);
           cb(null, {
             path: result.secure_url,
             filename: result.public_id,
@@ -67,10 +75,19 @@ let storage;
 
 if (isProduction || useCloudinary) {
   // Cloudinary config
+  console.log("[upload.js] ✅ Configuring Cloudinary storage...");
+  
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+
+  // Verify config
+  console.log("[upload.js] Cloudinary config:", {
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY ? "***SET***" : "NOT SET",
+    api_secret: process.env.CLOUDINARY_API_SECRET ? "***SET***" : "NOT SET",
   });
 
   storage = new CloudinaryStorage({
@@ -82,6 +99,7 @@ if (isProduction || useCloudinary) {
     },
   });
 } else {
+  console.log("[upload.js] ⚠️ Using LOCAL storage...");
   // Local upload (to /tmp/uploads)
   const uploadDir = path.join(__dirname, "..", "tmp", "uploads");
 
