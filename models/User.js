@@ -44,6 +44,11 @@ const Users = new Schema({
 
   avatar_url: { type: String },
 
+  address: {
+    type: String,
+    default: null
+  },
+
 
   google_id: {
     type: String,

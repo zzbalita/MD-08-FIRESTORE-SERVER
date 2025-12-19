@@ -14,13 +14,14 @@ module.exports = (req, res, next) => {
 
     // Set consistent user object structure
     req.user = {
-      id: decoded.userId,        // Use 'id' for consistency with chat controller
-      userId: decoded.userId,    // Keep 'userId' for backward compatibility
+      id: decoded.userId,
+      userId: decoded.userId,
       role: decoded.role,
     };
 
     next();
   } catch (err) {
+    console.log(err);
     return res.status(403).json({ message: "Token không hợp lệ" });
   }
 };

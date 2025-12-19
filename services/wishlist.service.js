@@ -1,8 +1,8 @@
 // services/wishlist.service.js
 const mongoose = require('mongoose');
 const Wishlist = require('../models/Wishlist');
-const Product  = require('../models/Product');
-const Comment  = require('../models/Comment'); // dùng product_id, rating
+const Product = require('../models/Product');
+const Comment = require('../models/Comment'); // dùng product_id, rating
 
 class WishlistService {
   async getOrCreateWishlist(userId) {
@@ -19,7 +19,6 @@ class WishlistService {
     const products = await Product.find(
       { _id: { $in: ids } },
       // thêm ratingAvg/ratingCount ở đây nếu Product đã lưu sẵn 2 field này
-      'name image price brand status createdAt'
     ).lean();
 
     // 2) Thống kê sao theo product_id
@@ -58,7 +57,7 @@ class WishlistService {
   }
 
   async getWishlist(userId) {
-    const wl  = await this.getOrCreateWishlist(userId);
+    const wl = await this.getOrCreateWishlist(userId);
     const ids = (wl.products || []).map(id => id.toString());
     const enriched = await this.enrichProducts(ids);
     return { _id: wl._id, user_id: wl.user_id, products: enriched };

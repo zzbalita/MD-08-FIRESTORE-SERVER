@@ -149,3 +149,73 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: "Lỗi server" });
   }
 };
+
+// 4. Quên mật khẩu - gửi OTP
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Vui lòng nhập email" });
+
+    // Kiểm tra user có tồn tại ko
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "Email không tồn tại trong hệ thống" });
+
+    // Tạo OTP
+    const otp = crypto.randomInt(100000, 999999).toString();
+
+    // Lưu OTP (upsert)
+    await OtpCode.findOneAndUpdate(
+      { email },
+      { code: otp, expiresAt: new Date(Date.now() + 10 * 60 * 1000) }, // 10p
+      { upsert: true, new: true }
+    );
+
+    // Gửi mail (giả lập log)
+    console.log(`🔑 OTP Forgot Password cho ${email}: ${otp}`);
+    // await sendMail(...) 
+
+    res.json({ message: "Mã OTP đã được gửi tới email của bạn", email });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+}
+
+// 5. Đặt lại mật khẩu (verify OTP + change pass)
+exports.resetPassword = async (req, res) => {
+  try {
+    console.log("🚀 ~ exports.resetPassword ~ req.body:", req.body)
+    const { email, otp, password: newPassword } = req.body;
+    console.log(email, otp, newPassword);
+    // Validate
+    const otpDoc = await OtpCode.findOne({ email, code: otp });
+    if (!otpDoc || otpDoc.expiresAt < Date.now()) {
+      console.log("Mã OTP không hợp lệ hoặc đã hết hạn");
+      return res.status(400).json({ message: "Mã OTP không đúng hoặc đã hết hạn" });
+    }
+
+    // Validate password
+    if (!newPassword || newPassword.length < 6) {
+      console.log("Mật khẩu phải từ 6 ký tự");
+      return res.status(400).json({ message: "Mật khẩu phải từ 6 ký tự" });
+    }
+
+    // Update User
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User không tồn tại" });
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    // Xóa OTP
+    await OtpCode.deleteMany({ email });
+
+    res.json({ message: "Đổi mật khẩu thành công. Vui lòng đăng nhập lại." });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+}
