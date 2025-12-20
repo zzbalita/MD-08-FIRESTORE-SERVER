@@ -45,3 +45,25 @@ exports.remove = async (req, res) => {
     res.status(err.status || 500).json({ message: err.message || 'Không thể xoá bình luận' });
   }
 };
+
+// Admin: Lấy tất cả đánh giá
+exports.adminListAll = async (req, res) => {
+  try {
+    const { page, limit, rating, productId } = req.query;
+    const data = await svc.listAll({ page, limit, rating, productId });
+    res.status(200).json(data);
+  } catch (err) {
+    res.status(err.status || 500).json({ message: err.message || 'Không thể lấy danh sách đánh giá' });
+  }
+};
+
+// Admin: Xóa đánh giá
+exports.adminRemove = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const out = await svc.adminRemove(commentId);
+    res.status(200).json(out);
+  } catch (err) {
+    res.status(err.status || 500).json({ message: err.message || 'Không thể xoá đánh giá' });
+  }
+};

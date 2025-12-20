@@ -141,4 +141,66 @@ module.exports = {
     }
     return { success: true };
   },
+
+  // Admin: Lấy tất cả đánh giá
+  async listAll({ page = 1, limit = 20, rating, productId } = {}) {
+    const p = Math.max(1, Number(page) || 1);
+    const l = Math.max(1, Math.min(100, Number(limit) || 20));
+    const q = {};
+
+    if (rating) {
+      q.rating = Number(rating);
+    }
+    if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+      q.product_id = new mongoose.Types.ObjectId(productId);
+    }
+
+    const [items, total] = await Promise.all([
+      Comment.find(q)
+        .populate('user_id', 'full_name email avatar_url')
+        .populate('product_id', 'name image')
+        .sort({ createdAt: -1 })
+        .skip((p - 1) * l)
+        .limit(l)
+        .lean(),
+      Comment.countDocuments(q),
+    ]);
+
+    // Thống kê tổng quan
+    const stats = await Comment.aggregate([
+      { $group: { 
+        _id: null, 
+        avgRating: { $avg: '$rating' }, 
+        totalReviews: { $sum: 1 },
+        rating5: { $sum: { $cond: [{ $eq: ['$rating', 5] }, 1, 0] } },
+        rating4: { $sum: { $cond: [{ $eq: ['$rating', 4] }, 1, 0] } },
+        rating3: { $sum: { $cond: [{ $eq: ['$rating', 3] }, 1, 0] } },
+        rating2: { $sum: { $cond: [{ $eq: ['$rating', 2] }, 1, 0] } },
+        rating1: { $sum: { $cond: [{ $eq: ['$rating', 1] }, 1, 0] } },
+      }}
+    ]);
+
+    return {
+      items,
+      pagination: {
+        page: p,
+        limit: l,
+        totalItems: total,
+        totalPages: Math.ceil(total / l) || 1,
+      },
+      summary: stats[0] || { avgRating: 0, totalReviews: 0, rating5: 0, rating4: 0, rating3: 0, rating2: 0, rating1: 0 },
+    };
+  },
+
+  // Admin: Xóa đánh giá
+  async adminRemove(commentId) {
+    assertObjectId(commentId, 'commentId');
+    const doc = await Comment.findByIdAndDelete(commentId);
+    if (!doc) {
+      const err = new Error('Không tìm thấy đánh giá');
+      err.status = 404;
+      throw err;
+    }
+    return { success: true };
+  },
 };
