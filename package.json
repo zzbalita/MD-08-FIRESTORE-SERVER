@@ -26,6 +26,7 @@
     "nodemailer": "^7.0.10",
     "slugify": "^1.6.6",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "uuid": "^8.3.2"
   }
 }
