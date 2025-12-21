@@ -16,6 +16,8 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: [
+      "http://172.20.10.3:5001",
+      "http://192.168.100.215",
       "http://192.168.100.127",
       "http://localhost:3000",
       "http://localhost:5002",
