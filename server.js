@@ -18,6 +18,8 @@ const io = new Server(server, {
     origin: [
       "http://172.20.10.3:5001",
       "http://192.168.100.215",
+      "http://192.168.0.103:5001",
+      "http://192.168.0.103:5002",
       "http://192.168.100.127",
       "http://localhost:3000",
       "http://localhost:5002",
