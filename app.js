@@ -30,6 +30,10 @@ app.use((req, res, next) => {
 // --- Cấu hình CORS (Gộp tất cả các IP từ cả 2 file) ---
 const corsOptions = {
   origin: [
+ 
+
+    "http://172.20.10.3:5001",
+    "http:// 192.168.100.215",
     "http://192.168.0.103:5001",
     "http://192.168.0.103:5002",
     "http://192.168.100.127",

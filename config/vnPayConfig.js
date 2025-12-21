@@ -5,10 +5,10 @@ module.exports = {
   VNP_URL: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
   
   // Return URL quan trọng để VNPay gửi kết quả về App
-  VNP_RETURN_URL: 'http://192.168.100.127:5001/api/payments/vnpay-return',
+  VNP_RETURN_URL: 'http://172.20.10.3:5001/api/payments/vnpay-return',
 
-  VNP_IPN_URL: 'http://192.168.100.127:5001/api/payments/vnpay-ipn',
-  VNP_CALLBACK_URL: 'http://192.168.100.127:5001/api/payments/handle-callback',
+  VNP_IPN_URL: 'http://172.20.10.3:5001/api/payments/vnpay-ipn',
+  VNP_CALLBACK_URL: 'http://172.20.10.3:5001/api/payments/handle-callback',
   
   IS_SANDBOX: true,
   PAYMENT_TIMEOUT: 5 * 60 * 1000,
