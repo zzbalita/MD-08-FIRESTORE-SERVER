@@ -1,33 +1,25 @@
 const express = require("express");
 const router = express.Router();
 const auth = require("../middlewares/authMiddleware");
-const authAdmin = require("../middlewares/authAdmin");
 const orderController = require('../controllers/order.controller');
+// BỔ SUNG DÒNG NÀY:
+const paymentController = require('../controllers/payment.controller'); 
 const authAdminOrStaff = require("../middlewares/authAdminOrStaff");
 
-// ⭐ Tuyến chính mà ứng dụng Android của bạn hay gọi nhất
-router.post("/", auth, orderController.createOrder); 
-
-// Đặt hàng VNPay
+// Đặt hàng VNPay (Tạo link)
 router.post("/vnpay-order", auth, orderController.createVNPayOrder);
 
-// Đặt hàng COD
+// Xử lý kết quả trả về từ VNPay (SỬA Ở ĐÂY)
+// Sử dụng paymentController thay vì orderController
+router.get('/vnpay-return', paymentController.processPaymentReturn);
+
+// Các route khác giữ nguyên
+router.post("/", auth, orderController.createOrder); 
 router.post('/cash-order', auth, orderController.createCashOrder);
-
-// Lấy đơn hàng của user
 router.get('/my-orders', auth, orderController.getMyOrders);
-
-// Lấy danh sách tất cả đơn hàng cho admin
 router.get('/admin/orders', authAdminOrStaff, orderController.getAllOrders);
-
-// Lấy chi tiết đơn hàng
 router.get('/:id', auth, orderController.getOrderById);
-
-// Admin cập nhật trạng thái đơn hàng
 router.put('/:id/status', authAdminOrStaff, orderController.updateOrderStatus);
-
-// Hủy đơn hàng (User chỉ hủy được đơn của mình khi pending, Admin hủy được nhiều trạng thái hơn)
 router.put('/:id/cancel', auth, orderController.cancelOrder);
-
 
 module.exports = router;

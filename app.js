@@ -18,6 +18,12 @@ connectDB();
 
 const app = express();
 
+app.use((req, res, next) => {
+  res.setHeader('ngrok-skip-browser-warning', 'true'); // Ép ngrok bỏ qua trang cảnh báo
+  res.setHeader('bypass-tunnel-reminder', 'true'); 
+  next();
+});
+
 // ⭐ FIX QUAN TRỌNG: Chấp nhận cả /api/comments và /api/comments/
 app.set('strict routing', false);
 

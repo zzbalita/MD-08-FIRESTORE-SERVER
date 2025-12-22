@@ -1,27 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const paymentController = require('../controllers/payment.controller');
+const orderController = require('../controllers/order.controller');
 const auth = require('../middlewares/authMiddleware');
 
-// Tạo URL thanh toán VNPay
-router.post('/create', auth, paymentController.createPayment);
+// Sửa lại cho khớp với App Android đang gọi: /api/payments/vnpay-order
+// (Hoặc nếu bạn đặt route này trong file payment.routes.js và khai báo app.use('/api/payments', ...))
+router.post('/vnpay-order', auth, orderController.createVNPayOrder);
 
-// Xử lý kết quả thanh toán từ VNPay
+// Xử lý kết quả trả về (VNPay gọi link này)
 router.get('/vnpay-return', paymentController.processPaymentReturn);
 
-// Xác thực thanh toán (cho client)
-router.get('/verify', paymentController.verifyPayment);
-
-// Xử lý IPN từ VNPay
+// Xử lý IPN (Cập nhật đơn hàng ngầm - Rất quan trọng)
 router.get('/vnpay-ipn', paymentController.processIpn);
 
-// Xử lý callback từ VNPay
-router.get('/vnpay-callback', paymentController.handleCallback);
-
-// Xử lý callback từ VNPay (tương thích với backend api)
-router.get('/handle-callback', paymentController.handleCallback);
-
-// Kiểm tra trạng thái thanh toán
-router.get('/status/:orderId', paymentController.checkPaymentStatus);
-
-module.exports = router; 
+module.exports = router;

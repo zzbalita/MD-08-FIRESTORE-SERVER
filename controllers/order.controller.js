@@ -332,58 +332,44 @@ exports.getAllOrders = async (req, res) => {
     } catch (err) { res.status(500).json({ message: 'Lỗi.' }); }
 };
 
+// File: controllers/order.controller.js
+
 exports.createVNPayOrder = async (req, res) => {
     try {
-        const { items, shippingAddress: address, shipping_fee, total_amount } = req.body;
+        const { items, shippingAddress, shipping_fee, total_amount } = req.body;
         const user_id = req.user?.userId;
 
-        // 1. Tạo đơn hàng tạm thời trong Database (status: pending)
-        const order = new Order({
-            user_id: user_id,
-            items: items.map(i => ({ ...i, product_id: i.product_id?.["_id"] || i.product_id })),
-            address: {
-                full_name: address.fullName,
-                phone_number: address.phone,
-                province: address.province,
-                district: address.district,
-                ward: address.ward,
-                street: address.street
-            },
-            shipping_fee,
-            payment_method: 'vnpay',
-            total_amount,
-            status: 'pending'
-        });
-        const savedOrder = await order.save();
+        // 1. Log để kiểm tra dữ liệu đầu vào
+        console.log("Dữ liệu nhận được để tạo link VNPay:", { items, shippingAddress });
 
-        // 2. Chuẩn bị dữ liệu để gọi VNPay Service
+        const tempTransactionId = new mongoose.Types.ObjectId();
         const ipAddr = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         
+        // 2. PHẢI ĐÓNG GÓI ĐỦ DỮ LIỆU Ở ĐÂY
         const paymentData = {
-            order_id: savedOrder._id.toString(),
+            order_id: tempTransactionId.toString(), 
             total: total_amount,
             ipAddr: ipAddr,
-            orderInfo: `Thanh toan don hang ${savedOrder._id}`,
-            user_id: user_id
+            user_id: user_id,
+            // Đây là phần bị thiếu của bạn:
+            order_details: { 
+                items, 
+                shippingAddress, 
+                shipping_fee, 
+                total_amount 
+            } 
         };
 
-        // 3. Gọi VNPay Service để lấy link thanh toán
         const vnpayResponse = await vnpayService.createPaymentUrl(paymentData);
 
         if (vnpayResponse.success) {
-            // TRẢ VỀ JSON ĐÚNG FORMAT CHO ANDROID
             res.status(201).json({
                 success: true,
-                paymentUrl: vnpayResponse.paymentUrl,
-                message: "Khởi tạo thanh toán VNPay thành công"
+                paymentUrl: vnpayResponse.paymentUrl
             });
         } else {
-            res.status(400).json({
-                success: false,
-                message: vnpayResponse.message || "Không thể tạo link thanh toán"
-            });
+            res.status(400).json({ success: false, message: "Lỗi tạo link thanh toán" });
         }
-
     } catch (err) {
         console.error('Lỗi createVNPayOrder:', err);
         res.status(500).json({ success: false, message: 'Lỗi server.' });

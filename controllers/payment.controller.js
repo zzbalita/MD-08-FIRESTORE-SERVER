@@ -1,228 +1,190 @@
-const vnpayService = require('../services/vnpay.service');
+const mongoose = require('mongoose'); // THÊM DÒNG NÀY
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
-const Cart = require('../models/Cart'); // ⭐ QUAN TRỌNG: Import model Cart
+const Cart = require('../models/Cart');
+const Product = require('../models/Product');
+const { createAndSendNotification } = require("./notification.controller");
 
-const paymentController = {
-  /**
-   * Tạo URL thanh toán VNPay cho đơn hàng đã có sẵn
-   */
-  createPayment: async (req, res) => {
-    console.log('🔍 DEBUG req.body:', req.body);
-    
+const createRealOrder = async (app, payment) => { 
     try {
-      const { order_id, total, user_id, orderInfo, ipAddr } = req.body;
-      
-      // Lấy IP của client
-      const clientIp = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || req.connection.socket?.remoteAddress;
-      console.log('🌐 DEBUG clientIp:', clientIp);
-      
-      const paymentData = {
-        order_id,
-        total,
-        orderInfo: orderInfo || `Thanh toan don hang ${order_id}`,
-        user_id,
-        ipAddr: ipAddr || clientIp || '',
-        bankCode: '',
-        orderType: 'billpayment',
-        language: 'vn'
-      };
-      
-      console.log('📊 DEBUG paymentData:', paymentData);
-      
-      const result = await vnpayService.createPaymentUrl(paymentData);
-      
-      console.log('✅ Payment URL Result:', result);
-      
-      if (result.success) {
-        res.json({
-          success: true,
-          orderId: result.orderId,
-          vnpTxnRef: result.vnpTxnRef,
-          paymentUrl: result.paymentUrl
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          message: result.message
-        });
-      }
-    } catch (error) {
-      console.error('❌ Error in createPaymentUrl:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error',
-        error: error.message
-      });
-    }
-  },
+        // Kiểm tra lại một lần nữa để chắc chắn không tạo trùng
+        const existingOrder = await Order.findOne({ "payment_info.payment_id": payment._id });
+        if (existingOrder) return existingOrder;
 
-  /**
-   * Xử lý return URL từ VNPay (khi user quay về từ trang thanh toán)
-   */
-  processPaymentReturn: async (req, res) => {
-    console.log('🔄 VNPay Return URL called');
-    console.log('📋 Query params:', req.query);
-    
-    try {
-      const returnData = req.query;
-      if (!returnData || !returnData.vnp_ResponseCode) {
-        return res.status(400).send('Dữ liệu không hợp lệ');
-      }
-      
-      const orderId = returnData.orderId; // Hoặc lấy từ vnp_TxnRef tùy logic lưu
-      
-      console.log('📦 OrderId from URL:', orderId);
-      
-      // Tìm payment record
-      const payment = await Payment.findOne({
-        order_id: orderId,
-        paymentType: 'VNPay'
-      });
-      
-      if (payment) {
-        // Cập nhật payment với return data
-        await Payment.findByIdAndUpdate(payment._id, {
-          responseData: {
-            ...payment.responseData,
-            return: returnData,
-            returnTime: new Date().toISOString()
-          }
-        });
-        
-        // Xử lý return data (check sum)
-        returnData.orderId = payment.order_id;
-        const handleResult = await vnpayService.handleVNPayCallback(returnData);
-        console.log('🔍 Handle result:', handleResult);
-        
-        if (returnData.vnp_ResponseCode === '00') {
-            // ============================================================
-            // ⭐ BẮT ĐẦU: CODE XÓA GIỎ HÀNG SAU KHI THANH TOÁN THÀNH CÔNG ⭐
-            // ============================================================
-            console.log('🚀 [PAYMENT SUCCESS] Bắt đầu quy trình xóa giỏ hàng...');
+        console.log("-----------------------------------------");
+        console.log(">>> [BƯỚC 1] Bắt đầu tạo đơn hàng thật từ Payment ID:", payment._id);
+
+        const { items, shippingAddress, shipping_fee, total_amount } = payment.responseData.order_details;
+
+        const processedItems = [];
+        for (const item of items) {
+            const pId = item.product_id?._id || item.product_id;
+            const product = await Product.findById(pId);
             
-            try {
-                // 1. Tìm Order để lấy chính xác User ID
-                const orderInfo = await Order.findById(payment.order_id);
-                
-                if (orderInfo) {
-                    // Lấy user_id (kiểm tra cả 2 trường hợp tên biến)
-                    const userIdToDelete = orderInfo.user_id || orderInfo.userId;
-                    
-                    console.log(`👤 Tìm thấy User ID từ đơn hàng: ${userIdToDelete}`);
-
-                    if (userIdToDelete) {
-                        // 2. Thực hiện xóa (Thử xóa cả 2 kiểu tên field trong Cart để chắc ăn 100%)
-                        const del1 = await Cart.findOneAndDelete({ user_id: userIdToDelete });
-                        const del2 = await Cart.findOneAndDelete({ userId: userIdToDelete });
-                        
-                        if (del1 || del2) {
-                             console.log(`🛒 [SUCCESS] ĐÃ XÓA GIỎ HÀNG CỦA USER: ${userIdToDelete}`);
-                        } else {
-                             console.log(`⚠️ Không tìm thấy giỏ hàng của User ${userIdToDelete} (Có thể đã xóa trước đó)`);
-                        }
-                    } else {
-                        console.log('⚠️ Không tìm thấy user_id trong bảng Order');
-                    }
-                } else {
-                    console.log('⚠️ Không tìm thấy Order tương ứng để xóa giỏ hàng');
+            if (product) {
+                const variant = product.variations.find(v => v.color === item.color && v.size === item.size);
+                if (variant) {
+                    variant.quantity -= item.quantity;
+                    product.quantity -= item.quantity;
+                    await product.save();
                 }
-            } catch (cartError) {
-                console.error('❌ Lỗi ngoại lệ khi xóa giỏ hàng:', cartError);
             }
-            // ============================================================
-            // ⭐ KẾT THÚC CODE XÓA GIỎ HÀNG ⭐
-            // ============================================================
 
-          return res.send(`
-            <html>
-              <head>
-                <title>Thanh toán thành công</title>
-                <style>
-                  body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-                  .success { color: #27ae60; }
-                  .message { margin: 20px 0; }
-                </style>
-              </head>
-              <body>
-                <h2 class="success">✓ Thanh toán thành công!</h2>
-                <div class="message">
-                  <p>Đơn hàng đã được thanh toán.</p>
-                  <p>Vui lòng quay lại ứng dụng.</p>
-                </div>
-                <script>setTimeout(() => { window.close(); }, 3000);</script>
-              </body>
-            </html>
-          `);
-        } else {
-          return res.send(`
-            <html>
-              <head><title>Thanh toán thất bại</title></head>
-              <body><h2 style="color:red">✗ Thanh toán thất bại</h2></body>
-            </html>
-          `);
+            processedItems.push({
+              product_id: new mongoose.Types.ObjectId(pId),
+              color: item.color,
+              size: item.size,
+              quantity: item.quantity,
+              price: item.price,
+              image: item.image // <--- PHẢI THÊM DÒNG NÀY ĐỂ LƯU ẢNH VÀO ORDER
+          });
         }
-      } else {
-        return res.send('Không tìm thấy đơn hàng');
-      }
-    } catch (error) {
-      console.error('❌ Error in processPaymentReturn:', error);
-      return res.status(500).send('Lỗi máy chủ');
-    }
-  },
 
-  verifyPayment: (req, res) => {
-    try {
-      const vnpParams = req.query;
-      if (!vnpParams || Object.keys(vnpParams).length === 0) {
-        return res.status(400).json({ success: false, message: 'No payment data' });
-      }
-      const result = vnpayService.verifyReturnUrl(vnpParams);
-      return res.status(200).json({
-        ...vnpParams,
-        success: result.isValid && result.isSuccessful
-      });
-    } catch (error) {
-      return res.status(500).json({ success: false, message: 'Error' });
-    }
-  },
+        const newOrder = new Order({
+            user_id: new mongoose.Types.ObjectId(payment.user_id),
+            items: processedItems,
+            address: {
+                full_name: shippingAddress.fullName || shippingAddress.full_name,
+                phone_number: shippingAddress.phone || shippingAddress.phone_number,
+                province: shippingAddress.province,
+                district: shippingAddress.district,
+                ward: shippingAddress.ward,
+                street: shippingAddress.street
+            },
+            shipping_fee: Number(shipping_fee),
+            total_amount: Number(total_amount),
+            payment_method: 'vnpay',
+            status: 'processing',
+            payment_info: {
+                transaction_ref: payment.transactionRef,
+                payment_id: payment._id
+            }
+        });
 
-  processIpn: (req, res) => {
-    try {
-      const ipnData = req.query;
-      const result = vnpayService.processIpn(ipnData);
-      return res.status(200).json(result);
-    } catch (error) {
-      return res.status(500).json({ RspCode: '99', Message: 'Unknown error' });
-    }
-  },
+        const savedOrder = await newOrder.save();
+        console.log("✅ [BƯỚC 3] Đã lưu Order thành công ID:", savedOrder._id);
 
-  handleCallback: async (req, res) => {
-    console.log('🔄 VNPay Callback called');
-    try {
-        const callbackData = req.query;
-        // ... (Giữ nguyên logic callback cũ của bạn nếu cần thiết) ...
-        // Lưu ý: Callback thường dùng cho IPN (server gọi server), 
-        // còn processPaymentReturn dùng cho Browser redirect.
-        // Nếu bạn muốn xóa giỏ hàng cả ở đây thì copy đoạn code xóa giỏ hàng bên trên bỏ vào đây.
+        // Cập nhật Payment & Giỏ hàng
+        await Payment.findByIdAndUpdate(payment._id, { 
+            status: 'completed', 
+            order_id: savedOrder._id 
+        });
         
-        return res.status(200).json({ success: true, message: 'Callback received' });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ success: false });
-    }
-  },
+        await Cart.findOneAndUpdate({ user_id: payment.user_id }, { $set: { items: [] } });
 
-  checkPaymentStatus: async (req, res) => {
-    try {
-      const { orderId } = req.params;
-      const payment = await Payment.findOne({ order_id: orderId, paymentType: 'VNPay' });
-      if (!payment) return res.status(404).json({ success: false });
-      return res.status(200).json({ success: true, payment });
+        const io = app.get('io');
+        if (io) {
+            io.emit('admin:new_order', savedOrder);
+            io.to(payment.user_id.toString()).emit('payment:success', { order_id: savedOrder._id });
+        }
+
+      
+        try {
+          // Lấy ảnh từ chính dữ liệu ông đã giải nén ở đầu hàm [BƯỚC 1]
+          // payment.responseData.order_details.items là nơi chứa ảnh chuẩn nhất
+          let finalImage = "";
+          
+          if (payment.responseData && payment.responseData.order_details && payment.responseData.order_details.items.length > 0) {
+              finalImage = payment.responseData.order_details.items[0].image; 
+          }
+      
+          console.log("=> Link ảnh sản phẩm gửi thông báo:", finalImage);
+      
+          await createAndSendNotification(app, payment.user_id.toString(), {
+              type: "order",
+              title: "Thanh toán thành công",
+              message: `Đơn hàng #${savedOrder._id.toString().slice(-6)} đã được thanh toán.`,
+              order_id: savedOrder._id,
+              image: finalImage // Gửi link ảnh này đi
+          });
+      } catch (e) {
+          console.error("Lỗi gửi thông báo:", e.message);
+      }
+        // === HẾT ĐOẠN SỬA ===
+
+        return savedOrder;
     } catch (error) {
-      return res.status(500).json({ success: false });
+        console.error("❌ LỖI TRONG createRealOrder:", error);
+        throw error; // Xóa chữ 'n' thừa ở đây nếu có
     }
-  }
+};
+const paymentController = {
+    processPaymentReturn: async (req, res) => {
+        try {
+            const { vnp_ResponseCode, vnp_TxnRef } = req.query;
+            const payment = await Payment.findOne({ transactionRef: vnp_TxnRef });
+
+            if (!payment) return res.send("Không tìm thấy giao dịch.");
+
+            let orderId = payment.order_id;
+
+            if (vnp_ResponseCode === '00') {
+              if (payment.status !== 'completed') {
+                  const savedOrder = await createRealOrder(req.app, payment);
+                  orderId = savedOrder._id;
+              }
+              
+              // TRẢ VỀ HTML CHUẨN (KHÔNG DÙNG myapp:// ĐỂ TRÁNH LỖI WEBVIEW)
+              return res.send(`
+                  <html>
+                      <head>
+                          <meta name="viewport" content="width=device-width, initial-scale=1">
+                          <style>
+                              body { font-family: sans-serif; text-align: center; padding-top: 50px; }
+                          </style>
+                      </head>
+                      <body>
+                          <div style="font-size: 50px;">✅</div>
+                          <h2>Thanh toán thành công</h2>
+                          <p>Đang quay lại FiveStore...</p>
+                          <script>
+                              // Chỉ cần in log, Android sẽ bắt URL có chứa order_id tự động
+                              console.log("Success: ${orderId}");
+                          </script>
+                      </body>
+                  </html>
+              `);
+          } else {
+                return res.send(`
+                    <html>
+                        <body onload="location.href='myapp://payment_fail'">
+                            <div style="text-align:center; padding-top:50px;">
+                                <h2>Thanh toán thất bại</h2>
+                                <p>Đang quay lại ứng dụng...</p>
+                            </div>
+                        </body>
+                    </html>
+                `);
+            }
+        } catch (error) {
+            console.error("Lỗi Return:", error);
+            res.status(500).send("Lỗi xử lý đơn hàng.");
+        }
+    },
+
+    processIpn: async (req, res) => {
+      try {
+        // TRUY XUẤT ĐÚNG CẤU TRÚC: responseData -> order_details -> items
+        const details = payment.responseData.order_details;
+        let finalImage = "";
+    
+        if (details && details.items && details.items.length > 0) {
+            finalImage = details.items[0].image; // Lấy ảnh sản phẩm đầu tiên
+        }
+    
+        console.log("=> THỰC TẾ ẢNH SẼ GỬI:", finalImage);
+    
+        await createAndSendNotification(app, payment.user_id.toString(), {
+            type: "order",
+            title: "Thanh toán thành công",
+            message: `Đơn hàng #${savedOrder._id.toString().slice(-6)} đã được thanh toán.`,
+            order_id: savedOrder._id,
+            image: finalImage // Nếu cái này có link, nó sẽ không hiện "anh tây" nữa
+        });
+    } catch (e) {
+        console.error("Lỗi gửi thông báo:", e.message);
+    }
+    }
 };
 
 module.exports = paymentController;
