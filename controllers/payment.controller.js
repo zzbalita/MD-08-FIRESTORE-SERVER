@@ -14,13 +14,26 @@ const createRealOrder = async (app, payment) => {
         console.log("-----------------------------------------");
         console.log(">>> [BƯỚC 1] Bắt đầu tạo đơn hàng thật từ Payment ID:", payment._id);
 
-        const { items, shippingAddress, shipping_fee, total_amount } = payment.responseData.order_details;
-
+        const orderData = payment.responseData.order_details || payment.responseData;
+        if (!orderData || !orderData.items) {
+            console.error("❌ Dữ liệu order_details trong Payment bị trống!");
+            return null;
+        }
+        
+        const items = orderData.items;
+        const shippingAddress = orderData.shippingAddress;
+        const shipping_fee = orderData.shipping_fee || 30000;
+        const total_amount = payment.amount;
         const processedItems = [];
+        let firstItemImage = ""; // Biến để hứng ảnh đầu tiên cho Notification
+
         for (const item of items) {
             const pId = item.product_id?._id || item.product_id;
             const product = await Product.findById(pId);
             
+            // Lấy link ảnh từ item gửi lên, nếu không có thì lấy từ Product trong DB
+            const currentItemImage = item.image || (product ? product.image : "");
+
             if (product) {
                 const variant = product.variations.find(v => v.color === item.color && v.size === item.size);
                 if (variant) {
@@ -30,13 +43,18 @@ const createRealOrder = async (app, payment) => {
                 }
             }
 
+            // Lưu ảnh đầu tiên tìm được để tí nữa gửi Notif
+            if (!firstItemImage && currentItemImage) {
+                firstItemImage = currentItemImage;
+            }
+
             processedItems.push({
               product_id: new mongoose.Types.ObjectId(pId),
               color: item.color,
               size: item.size,
               quantity: item.quantity,
               price: item.price,
-              image: item.image // <--- PHẢI THÊM DÒNG NÀY ĐỂ LƯU ẢNH VÀO ORDER
+              image: currentItemImage // Lưu link ảnh chuẩn vào Order
           });
         }
 
@@ -80,30 +98,30 @@ const createRealOrder = async (app, payment) => {
 
       
         try {
-          // Lấy ảnh từ chính dữ liệu ông đã giải nén ở đầu hàm [BƯỚC 1]
-          // payment.responseData.order_details.items là nơi chứa ảnh chuẩn nhất
-          let finalImage = "";
-          
-          if (payment.responseData && payment.responseData.order_details && payment.responseData.order_details.items.length > 0) {
-              finalImage = payment.responseData.order_details.items[0].image; 
-          }
-      
-          console.log("=> Link ảnh sản phẩm gửi thông báo:", finalImage);
-      
-          await createAndSendNotification(app, payment.user_id.toString(), {
-              type: "order",
-              title: "Thanh toán thành công",
-              message: `Đơn hàng #${savedOrder._id.toString().slice(-6)} đã được thanh toán.`,
-              order_id: savedOrder._id,
-              image: finalImage // Gửi link ảnh này đi
-          });
-      } catch (e) {
-          console.error("Lỗi gửi thông báo:", e.message);
-      }
+            // Lấy ảnh từ chính mảng processedItems (vì mảng này đã được DB tìm hộ ở trên)
+            let finalImage = "";
+            
+            if (processedItems && processedItems.length > 0) {
+                // Lấy ảnh của sản phẩm đầu tiên trong đơn hàng
+                finalImage = processedItems[0].image; 
+            }
+        
+            console.log("=> THỰC TẾ Link ảnh gửi thông báo:", finalImage);
+        
+            await createAndSendNotification(app, payment.user_id.toString(), {
+                type: "order",
+                title: "Thanh toán thành công",
+                message: `Đơn hàng #${savedOrder._id.toString().slice(-6)} đã được thanh toán.`,
+                order_id: savedOrder._id,
+                image: finalImage // Giờ đây finalImage sẽ có link từ DB Product
+            });
+        } catch (e) {
+            console.error("Lỗi gửi thông báo:", e.message);
+        }
         // === HẾT ĐOẠN SỬA ===
 
         return savedOrder;
-    } catch (error) {
+    } catch (error) {n
         console.error("❌ LỖI TRONG createRealOrder:", error);
         throw error; // Xóa chữ 'n' thừa ở đây nếu có
     }
@@ -161,29 +179,20 @@ const paymentController = {
             res.status(500).send("Lỗi xử lý đơn hàng.");
         }
     },
-
     processIpn: async (req, res) => {
-      try {
-        // TRUY XUẤT ĐÚNG CẤU TRÚC: responseData -> order_details -> items
-        const details = payment.responseData.order_details;
-        let finalImage = "";
-    
-        if (details && details.items && details.items.length > 0) {
-            finalImage = details.items[0].image; // Lấy ảnh sản phẩm đầu tiên
+        try {
+            const { vnp_ResponseCode, vnp_TxnRef } = req.query;
+            const payment = await Payment.findOne({ transactionRef: vnp_TxnRef });
+            if (!payment) return res.status(404).json({ RspCode: '01', Message: 'Payment not found' });
+
+            if (vnp_ResponseCode === '00' && payment.status !== 'completed') {
+                await createRealOrder(req.app, payment);
+            }
+            res.status(200).json({ RspCode: '00', Message: 'Success' });
+        } catch (e) {
+            console.error("❌ Lỗi IPN:", e.message);
+            res.status(500).json({ RspCode: '99', Message: 'Internal Error' });
         }
-    
-        console.log("=> THỰC TẾ ẢNH SẼ GỬI:", finalImage);
-    
-        await createAndSendNotification(app, payment.user_id.toString(), {
-            type: "order",
-            title: "Thanh toán thành công",
-            message: `Đơn hàng #${savedOrder._id.toString().slice(-6)} đã được thanh toán.`,
-            order_id: savedOrder._id,
-            image: finalImage // Nếu cái này có link, nó sẽ không hiện "anh tây" nữa
-        });
-    } catch (e) {
-        console.error("Lỗi gửi thông báo:", e.message);
-    }
     }
 };
 

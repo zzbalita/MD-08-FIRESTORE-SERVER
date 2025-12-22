@@ -11,6 +11,16 @@ const { createAndSendNotification } = require("./notification.controller");
 // ==========================================
 // 1. TẠO ĐƠN HÀNG THANH TOÁN TIỀN MẶT (COD)
 // ==========================================
+const statusMap = {
+    'pending': 'Chờ xác nhận',
+    'confirmed': 'Đã xác nhận',
+    'processing': 'Đang xử lý',
+    'shipping': 'Đang giao hàng',
+    'delivered': 'Đã giao thành công',
+    'cancelled': 'Đã hủy'
+};
+
+
 exports.createCashOrder = async (req, res) => {
     try {
         console.log('--- BẮT ĐẦU TẠO ĐƠN HÀNG COD ---');
@@ -256,7 +266,8 @@ exports.updateOrderStatus = async (req, res) => {
         await createAndSendNotification(req.app, order.user_id.toString(), {
             type: "order",
             title: "Cập nhật đơn hàng",
-            message: `Đơn hàng #${order._id.toString().slice(-6)} đã chuyển sang: ${newStatus}`,
+            // SỬA DÒNG NÀY: Dùng statusMap để dịch newStatus
+            message: `Đơn hàng #${order._id.toString().slice(-6)} đã chuyển sang: ${statusMap[newStatus] || newStatus}`,
             order_id: order._id,
             image: productImage
         });
