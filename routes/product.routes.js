@@ -20,8 +20,10 @@ router.get("/newest", productController.getNewestProducts);
 // routes/product.route.js
 router.get('/related/by-category', productController.getRelatedProductsByCategory);
 
+// GET - lấy sản phẩm bao gồm cả đã xóa (cho app xem lịch sử đơn hàng)
+router.get("/include-deleted/:id", productController.getProductByIdIncludeDeleted);
 
-// GET -  ctiet danh sách sản phẩm
+// GET - chi tiết sản phẩm (không bao gồm đã xóa)
 router.get("/:id", productController.getProductById);
 
 // POST - thêm sản phẩm

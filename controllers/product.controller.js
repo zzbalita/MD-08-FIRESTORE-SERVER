@@ -431,15 +431,29 @@ exports.deleteProduct = async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Sản phẩm không tồn tại." });
     
-    // Soft delete: đánh dấu isDeleted = true thay vì xóa thật
+    // Soft delete: đánh dấu isDeleted = true và status = "Đã xóa"
     product.isDeleted = true;
     product.deletedAt = new Date();
+    product.status = "Đã xóa";
     await product.save();
     
     res.json({ message: "Đã xoá sản phẩm" });
   } catch (err) {
     console.error("Lỗi khi xoá sản phẩm:", err);
     res.status(400).json({ message: "Không thể xoá sản phẩm" });
+  }
+};
+
+// Lấy sản phẩm theo ID (bao gồm cả sản phẩm đã xóa - dùng cho app xem lịch sử đơn hàng)
+exports.getProductByIdIncludeDeleted = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
+    
+    res.json(product);
+  } catch (err) {
+    console.error("Lỗi khi lấy sản phẩm:", err);
+    res.status(500).json({ message: "Lỗi server khi lấy sản phẩm" });
   }
 };
 
