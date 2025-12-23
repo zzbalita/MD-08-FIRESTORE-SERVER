@@ -6,7 +6,7 @@ const Admin = require('../models/Admin');
 
 // Bot ID constant (used as target_id for bot chats)
 const BOT_ID = 'bot';
-const BOT_NAME = 'Trợ lý ảo Manzone';
+const BOT_NAME = 'Trợ lý ảo FireStore';
 
 /**
  * Chat Support Service - Handles all chat support business logic
@@ -80,7 +80,7 @@ class ChatSupportService {
     let senderId;
     
     if (chatType === 'bot') {
-      welcomeText = '👋 Chào bạn! Tôi là Trợ lý ảo của Manzone. Tôi có thể giúp bạn:\n\n' +
+      welcomeText = '👋 Chào bạn! Tôi là Trợ lý ảo của FireStore. Tôi có thể giúp bạn:\n\n' +
         '• Tìm kiếm sản phẩm\n' +
         '• Thông tin về đơn hàng\n' +
         '• Hỗ trợ thanh toán\n' +
@@ -89,7 +89,7 @@ class ChatSupportService {
       senderType = 'bot';
       senderId = room.user_id; // Use user's ID as placeholder for bot
     } else {
-      welcomeText = '👋 Chào mừng bạn đến với Manzone Support!\n\n' +
+      welcomeText = '👋 Chào mừng bạn đến với FireStore Support!\n\n' +
         'Tôi là nhân viên hỗ trợ, rất vui được giúp đỡ bạn. ' +
         'Vui lòng mô tả vấn đề của bạn, tôi sẽ phản hồi trong thời gian sớm nhất! 😊';
       senderType = 'admin';

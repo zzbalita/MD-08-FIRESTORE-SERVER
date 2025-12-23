@@ -106,7 +106,7 @@ router.get('/admin/rooms/:roomId/history', authAdminOrStaff, async (req, res) =>
           id: m._id,
           message: m.message,
           sender_id: m.sender_id?._id || m.sender_id,
-          sender_name: m.sender_id?.full_name || (m.sender_type === 'bot' ? 'Trợ lý ảo Manzone' : 'Unknown'),
+          sender_name: m.sender_id?.full_name || (m.sender_type === 'bot' ? 'Trợ lý ảo FireStore' : 'Unknown'),
           sender_type: m.sender_type,
           message_type: m.message_type,
           is_from_user: m.sender_type === 'user',

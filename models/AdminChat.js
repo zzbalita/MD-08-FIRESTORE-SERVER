@@ -229,7 +229,7 @@ AdminChatSchema.statics.findOrCreateSession = async function(userId, sessionId) 
       last_activity: new Date(),
       messages: [{
         message_id: new mongoose.Types.ObjectId().toString(),
-        text: '👋 Chào mừng bạn đến với Manzone Support! Tôi là nhân viên hỗ trợ, rất vui được gặp bạn. Bạn có thể hỏi tôi bất kỳ điều gì về sản phẩm, đơn hàng, hoặc bất kỳ vấn đề gì. Hãy cho tôi biết bạn cần hỗ trợ gì nhé! 😊',
+        text: '👋 Chào mừng bạn đến với FireStore Support! Tôi là nhân viên hỗ trợ, rất vui được gặp bạn. Bạn có thể hỏi tôi bất kỳ điều gì về sản phẩm, đơn hàng, hoặc bất kỳ vấn đề gì. Hãy cho tôi biết bạn cần hỗ trợ gì nhé! 😊',
         is_user: false,
         message_type: 'text',
         timestamp: new Date()
