@@ -123,9 +123,37 @@ exports.getAllProducts = async (req, res) => {
         $addFields: {
           ratingAvg: { $round: [{ $ifNull: ['$_r.avg', 0] }, 1] },
           ratingCount: { $ifNull: ['$_r.count', 0] },
+          // Calculate total quantity from variations
+          totalQuantity: {
+            $reduce: {
+              input: "$variations",
+              initialValue: 0,
+              in: { $add: ["$$value", { $ifNull: ["$$this.quantity", 0] }] }
+            }
+          }
         }
       },
-      { $project: { ratingDoc: 0, _r: 0 } },
+      {
+        $addFields: {
+          // Update status based on total quantity (only if not "Ngừng bán")
+          status: {
+            $cond: {
+              if: { $eq: ["$status", "Ngừng bán"] },
+              then: "$status", // Keep "Ngừng bán" if manually set
+              else: {
+                $cond: {
+                  if: { $lte: ["$totalQuantity", 0] },
+                  then: "Hết hàng",
+                  else: "Đang bán"
+                }
+              }
+            }
+          },
+          // Update quantity field to match totalQuantity
+          quantity: "$totalQuantity"
+        }
+      },
+      { $project: { ratingDoc: 0, _r: 0, totalQuantity: 0 } },
     ]).collation({ locale: 'vi', strength: 1 });
 
     if (products.length === 0) {
@@ -145,6 +173,10 @@ exports.getProductById = async (req, res) => {
   try {
     const product = await Product.findOne({ _id: req.params.id, isDeleted: { $ne: true } });
     if (!product) return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
+
+    // Update status based on current stock
+    product.updateStatusBasedOnStock();
+    await product.save();
 
     // Tính rating cho sản phẩm
     const agg = await Comment.aggregate([
@@ -547,7 +579,7 @@ exports.restockProduct = async (req, res) => {
         }
       }
 
-      product.quantity = product.variations.reduce((s, v) => s + Number(v.quantity || 0), 0);
+      // Quantity will be updated by updateStatusBasedOnStock
     } else {
       const addQty = Number(quantity);
       if (!Number.isFinite(addQty) || addQty <= 0) {
@@ -558,9 +590,8 @@ exports.restockProduct = async (req, res) => {
       product.quantity = Number(product.quantity || 0) + addQty;
     }
 
-    if (product.status !== "Ngừng bán") {
-      product.status = product.quantity > 0 ? "Đang bán" : "Hết hàng";
-    }
+    // Update status based on current stock (automatically handles variations)
+    product.updateStatusBasedOnStock();
 
     await product.save();
     return res.json(product);

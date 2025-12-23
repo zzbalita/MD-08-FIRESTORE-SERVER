@@ -250,7 +250,8 @@ exports.updateOrderStatus = async (req, res) => {
                     const v = product.variations.find(v => v.color === item.color && v.size === item.size);
                     if (v && v.quantity >= item.quantity) {
                         v.quantity -= item.quantity;
-                        product.quantity -= item.quantity;
+                        // Update total quantity and status automatically
+                        product.updateStatusBasedOnStock();
                         await product.save();
                     }
                 }
@@ -304,6 +305,8 @@ exports.cancelOrder = async (req, res) => {
                 if (product) {
                     const v = product.variations.find(v => v.color === item.color && v.size === item.size);
                     if (v) v.quantity += item.quantity;
+                    // Update status based on current stock
+                    product.updateStatusBasedOnStock();
                     await product.save();
                 }
             }

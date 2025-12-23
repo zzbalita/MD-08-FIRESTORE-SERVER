@@ -149,21 +149,33 @@ exports.getOrderStatistics = async (req, res) => {
     const deliveredOrders = await Order.countDocuments({ ...match, status: "delivered" });
     const cancelledOrders = await Order.countDocuments({ ...match, status: "cancelled" });
 
-    // Tính doanh thu & lợi nhuận (chỉ đơn đã giao)
-    const deliveredOrdersData = await Order.find({ ...match, status: "delivered" })
-      .populate("items.product_id", "import_price");
+    // Tính doanh thu (chỉ đơn đã giao)
+    const deliveredOrdersData = await Order.find({ ...match, status: "delivered" });
 
     let totalRevenue = 0;
-    let totalCost = 0;
-
     deliveredOrdersData.forEach(order => {
       totalRevenue += order.total_amount;
-      order.items.forEach(item => {
-        const importPrice = item.product_id?.import_price || 0;
-        totalCost += importPrice * item.quantity;
-      });
     });
 
+    // Tính TỔNG GIÁ VỐN: dựa trên tồn kho hiện tại của TẤT CẢ sản phẩm (kể cả đã xóa)
+    // Công thức: import_price * tổng số lượng (tất cả các biến thể) của mỗi sản phẩm
+    const totalCostData = await Product.aggregate([
+      { $match: {} }, // Tính tất cả sản phẩm, kể cả đã xóa
+      { $unwind: "$variations" },
+      {
+        $group: {
+          _id: null,
+          totalValueImport: { 
+            $sum: { 
+              $multiply: ["$variations.quantity", { $ifNull: ["$import_price", 0] }] 
+            } 
+          }
+        }
+      }
+    ]);
+    const totalCost = totalCostData.length > 0 ? totalCostData[0].totalValueImport : 0;
+
+    // Tính TỔNG LỢI NHUẬN: Tổng doanh thu - Tổng giá vốn
     const totalProfit = totalRevenue - totalCost;
 
     // Doanh thu hôm nay
@@ -175,14 +187,21 @@ exports.getOrderStatistics = async (req, res) => {
     }).populate("items.product_id", "import_price");
 
     let todayRevenue = 0;
-    let todayCost = 0;
+    let todayCostOfSold = 0;
+    let todayOrderCount = 0;
+    
     todayOrders.forEach(order => {
       todayRevenue += order.total_amount;
+      todayOrderCount += 1; // Đếm số đơn hàng
       order.items.forEach(item => {
-        todayCost += (item.product_id?.import_price || 0) * item.quantity;
+        todayCostOfSold += (item.product_id?.import_price || 0) * item.quantity;
       });
     });
-    const todayProfit = todayRevenue - todayCost;
+    
+    // Lợi nhuận hôm nay = Doanh thu - Giá vốn hàng đã bán - (30000 * số đơn hàng)
+    // 30000 là tiền shipper mỗi đơn hàng
+    const todayShipperFee = 30000 * todayOrderCount;
+    const todayProfit = todayRevenue - todayCostOfSold - todayShipperFee;
 
     // ===== 2. Top khách hàng =====
     const topCustomers = await Order.aggregate([
@@ -309,30 +328,107 @@ exports.getInventoryStatistics = async (req, res) => {
     minPrice = parseInt(minPrice);
     maxPrice = parseInt(maxPrice);
 
-    const match = { isDeleted: { $ne: true } }; // Chỉ sản phẩm chưa xóa
-    if (category) match.category = category;
-    if (brand) match.brand = brand;
-
     // ================= Tổng quan tồn kho =================
-    const overall = await Product.aggregate([
-      { $match: match },
+    // Tổng số lượng tồn kho = tổng quantity của sản phẩm CHƯA XÓA
+    // Giá trị tồn = tính CHỈ sản phẩm CHƯA XÓA (đang có trên admin)
+    
+    // Match cho sản phẩm chưa xóa (đang có trên admin)
+    const matchActive = { isDeleted: { $ne: true } }; // Chỉ tính sản phẩm chưa xóa
+    if (category) matchActive.category = category;
+    if (brand) matchActive.brand = brand;
+    
+    // Tính tổng số lượng tồn kho (chỉ sản phẩm chưa xóa)
+    const stockData = await Product.aggregate([
+      { $match: matchActive }, // Chỉ tính sản phẩm chưa xóa
       { $unwind: "$variations" },
       {
         $group: {
           _id: null,
-          totalStock: { $sum: "$variations.quantity" },
-          totalValueSell: { $sum: { $multiply: ["$variations.quantity", "$price"] } },
-          totalValueImport: { $sum: { $multiply: ["$variations.quantity", "$import_price"] } }
+          totalStock: { $sum: "$variations.quantity" }
         }
       }
     ]);
-    const overview = overall[0] || { totalStock: 0, totalValueSell: 0, totalValueImport: 0 };
+    const totalStock = stockData.length > 0 ? stockData[0].totalStock : 0;
+    
+    // Tính giá trị tồn (CHỈ sản phẩm CHƯA XÓA - đang có trên admin)
+    // Công thức: (giá bán/mua của 1 sản phẩm * tổng số lượng sản phẩm đó)
+    // Bước 1: Lấy tất cả sản phẩm CHƯA XÓA và tính tổng quantity cho mỗi sản phẩm
+    const allProducts = await Product.find(matchActive).lean();
+    
+    let totalValueSell = 0;
+    let totalValueImport = 0;
+    
+    // Debug: log một vài sản phẩm đầu tiên
+    console.log('📊 Debug - Sample products:', allProducts.slice(0, 3).map(p => ({
+      name: p.name,
+      price: p.price,
+      import_price: p.import_price,
+      quantity: p.quantity,
+      variations_count: p.variations?.length || 0,
+      variations: p.variations?.map(v => ({ color: v.color, size: v.size, qty: v.quantity })) || []
+    })));
+    
+    console.log(`📊 Bắt đầu tính giá trị tồn cho ${allProducts.length} sản phẩm...`);
+    
+    allProducts.forEach((product, index) => {
+      // Tính tổng số lượng của sản phẩm
+      // Công thức: (giá bán/mua của 1 sản phẩm * tổng số lượng sản phẩm đó)
+      // Tổng số lượng = tổng tất cả variations.quantity
+      let totalQty = 0;
+      
+      if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
+        // Có variations: tổng tất cả quantity trong variations
+        totalQty = product.variations.reduce((sum, v) => {
+          const qty = Number(v.quantity) || 0;
+          return sum + qty;
+        }, 0);
+      } else {
+        // Không có variations: dùng quantity field trực tiếp
+        totalQty = Number(product.quantity) || 0;
+      }
+      
+      const price = Number(product.price) || 0;
+      const importPrice = Number(product.import_price) || 0;
+      
+      // Công thức: giá bán/mua của 1 sản phẩm * tổng số lượng sản phẩm đó
+      const valueSell = price * totalQty;
+      const valueImport = importPrice * totalQty;
+      
+      // Log chi tiết TẤT CẢ sản phẩm để debug - format ngắn gọn hơn
+      const variationsSum = product.variations?.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0) || 0;
+      console.log(`${index + 1}. ${product.name.substring(0, 30)} | Price: ${price} | Import: ${importPrice} | Qty: ${totalQty} (variations: ${variationsSum}, qty_field: ${product.quantity}) | Sell: ${valueSell} | Import: ${valueImport}`);
+      
+      totalValueSell += valueSell;
+      totalValueImport += valueImport;
+    });
+    
+    console.log(`📊 Tổng kết tính toán:`, {
+      totalValueSell: totalValueSell,
+      totalValueImport: totalValueImport
+    });
+    
+    const overview = {
+      totalStock: totalStock,
+      totalValueSell: totalValueSell,
+      totalValueImport: totalValueImport
+    };
+    
+    console.log('📊 Giá trị tồn tính toán:', {
+      totalValueSell: overview.totalValueSell,
+      totalValueImport: overview.totalValueImport,
+      totalStock: totalStock,
+      productsCount: allProducts.length
+    });
+    
+    // Gán tổng số lượng tồn kho (chỉ sản phẩm chưa xóa)
+    overview.totalStock = totalStock;
 
     // ================= Danh sách sản phẩm theo category =================
     let products = [];
     if (category) {
+      // matchActive đã có isDeleted filter và category/brand nếu có
       products = await Product.aggregate([
-        { $match: match }, // lọc category, brand trước
+        { $match: matchActive }, // Chỉ tính sản phẩm chưa xóa, đã có category/brand filter
         { $unwind: "$variations" },
         {
           $group: {
@@ -366,8 +462,19 @@ exports.getInventoryStatistics = async (req, res) => {
     // ================= Nếu không có category thì gom theo danh mục =================
     let stockByCategory = [];
     if (!category) {
+      // Lấy danh sách category đang hiển thị (status = "Hiển thị")
+      const { Category } = require('../models');
+      const activeCategories = await Category.find({ status: "Hiển thị" }).lean();
+      const activeCategoryNames = activeCategories.map(c => c.name);
+      
+      // Chỉ tính sản phẩm chưa xóa và có category đang hiển thị
+      const matchCategoryActive = {
+        ...matchActive,
+        category: { $in: activeCategoryNames }
+      };
+      
       stockByCategory = await Product.aggregate([
-        { $match: { isDeleted: { $ne: true } } }, // Lọc sản phẩm chưa xóa trước
+        { $match: matchCategoryActive }, // Chỉ tính sản phẩm chưa xóa và category đang hiển thị
         { $unwind: "$variations" },
         {
           $group: {
@@ -384,10 +491,14 @@ exports.getInventoryStatistics = async (req, res) => {
             totalValueSell: 1,
             totalValueImport: 1
           }
-        }
+        },
+        { $sort: { category: 1 } } // Sắp xếp theo tên danh mục
       ]);
     }
 
+    // Log trước khi trả về để đảm bảo giá trị đúng
+    console.log('📤 Response overview:', JSON.stringify(overview, null, 2));
+    
     res.json({ overview, products, stockByCategory });
   } catch (err) {
     console.error("Lỗi khi thống kê tồn kho:", err);
