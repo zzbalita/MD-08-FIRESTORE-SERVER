@@ -12,6 +12,10 @@ const orderRoutes = require("./routes/order.routes");
 const statisticsRoutes = require('./routes/statistics.routes');
 const notificationRoutes = require("./routes/notification.routes");
 const cartRoutes = require('./routes/cart.routes');
+const chatSupportRoutes = require('./routes/chatSupport.routes');
+
+// Import middleware for user activity tracking
+const { userActivityMiddleware } = require('./middlewares/userActivity');
 
 // Kết nối MongoDB
 connectDB();
@@ -65,6 +69,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
+// User activity tracking middleware (updates last_activity for online/offline status)
+// This middleware tracks user activity on each authenticated API request
+app.use(userActivityMiddleware);
+
 // --- Cấu hình Ảnh (Giữ nguyên logic của bạn) ---
 const useCloudinary = process.env.USE_CLOUDINARY === "true";
 console.log("=> USE_CLOUDINARY:", process.env.USE_CLOUDINARY);
@@ -110,6 +118,7 @@ app.use("/api/notifications", notificationRoutes);
 // 5. Chat & Upload
 app.use("/api/chat", require("./routes/chat.routes"));
 app.use("/api/chat-new", require("./routes/chatNew.routes"));
+app.use("/api/chat-support", chatSupportRoutes); // New Chat Support System (bot/admin with rooms)
 app.use("/api/upload", require("./routes/upload.routes"));
 
 // 6. ⭐ QUAN TRỌNG: Chuyển Route "/" xuống cuối cùng để không chặn API

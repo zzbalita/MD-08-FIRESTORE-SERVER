@@ -17,22 +17,27 @@ exports.getProductStatistics = async (req, res) => {
       lowStockThreshold = 10
     } = req.query;
 
-    // ===== 1. Lấy số liệu tổng =====
-    const totalProducts = await Product.countDocuments();
+    // ===== 1. Lấy số liệu tổng (chỉ sản phẩm chưa xóa) =====
+    const activeFilter = { isDeleted: { $ne: true } };
+    
+    const totalProducts = await Product.countDocuments(activeFilter);
 
-    // 2. Tổng tồn kho (cộng tất cả quantity trong variations)
+    // 2. Tổng tồn kho (cộng tất cả quantity trong variations - chỉ sản phẩm chưa xóa)
     const stockData = await Product.aggregate([
+      { $match: activeFilter },
       { $unwind: "$variations" },
       { $group: { _id: null, totalStock: { $sum: "$variations.quantity" } } }
     ]);
     const totalStock = stockData.length > 0 ? stockData[0].totalStock : 0;
 
-    // 3. Số sản phẩm sắp hết hàng (ít nhất một biến thể có số lượng < threshold)
+    // 3. Số sản phẩm sắp hết hàng (ít nhất một biến thể có số lượng < threshold - chỉ sản phẩm chưa xóa)
     const lowStockCount = await Product.countDocuments({
+      ...activeFilter,
       "variations.quantity": { $lt: parseInt(lowStockThreshold) }
     });
-    // 4. Số sản phẩm đã hết hàng
+    // 4. Số sản phẩm đã hết hàng (chỉ sản phẩm chưa xóa)
     const outOfStockCount = await Product.countDocuments({
+      ...activeFilter,
       status: "Hết hàng"
     });
     // ===== 2. Thống kê sản phẩm bán chạy =====
@@ -63,7 +68,9 @@ exports.getProductStatistics = async (req, res) => {
           as: 'product'
         }
       },
-      { $unwind: '$product' }
+      { $unwind: '$product' },
+      // Lọc bỏ sản phẩm đã xóa
+      { $match: { 'product.isDeleted': { $ne: true } } }
     ];
 
     if (status) {
@@ -302,7 +309,7 @@ exports.getInventoryStatistics = async (req, res) => {
     minPrice = parseInt(minPrice);
     maxPrice = parseInt(maxPrice);
 
-    const match = {};
+    const match = { isDeleted: { $ne: true } }; // Chỉ sản phẩm chưa xóa
     if (category) match.category = category;
     if (brand) match.brand = brand;
 
@@ -360,8 +367,8 @@ exports.getInventoryStatistics = async (req, res) => {
     let stockByCategory = [];
     if (!category) {
       stockByCategory = await Product.aggregate([
+        { $match: { isDeleted: { $ne: true } } }, // Lọc sản phẩm chưa xóa trước
         { $unwind: "$variations" },
-        { $match: match },
         {
           $group: {
             _id: "$category",
