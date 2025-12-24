@@ -3,6 +3,7 @@ const ChatSupport = require('../models/ChatSupport');
 const UserStatus = require('../models/UserStatus');
 const User = require('../models/User');
 const Admin = require('../models/Admin');
+const geminiService = require('./geminiService');
 
 // Bot ID constant (used as target_id for bot chats)
 const BOT_ID = 'bot';
@@ -173,70 +174,103 @@ class ChatSupportService {
 
   /**
    * Generate bot response based on user message
+   * Uses OpenAI with feature detection and DB queries, falls back to keyword-based responses
    */
   static async generateBotResponse(roomId, userMessage, userId) {
-    // Simple keyword-based response (replace with AI integration later)
-    const lowerMessage = userMessage.toLowerCase();
     let responseText;
     let responseType = 'default';
+    let confidenceScore = 0.8;
     
-    if (lowerMessage.includes('chào') || lowerMessage.includes('hello') || lowerMessage.includes('hi')) {
-      responseText = 'Chào bạn! Rất vui được hỗ trợ bạn. Bạn cần giúp gì ạ?';
-      responseType = 'greeting';
-    } else if (lowerMessage.includes('sản phẩm') || lowerMessage.includes('áo') || lowerMessage.includes('quần')) {
-      responseText = 'Bạn đang tìm sản phẩm gì? Tôi có thể giúp bạn tìm kiếm theo:\n\n' +
-        '• Tên sản phẩm\n' +
-        '• Danh mục (áo, quần, phụ kiện...)\n' +
-        '• Khoảng giá\n\n' +
-        'Hãy cho tôi biết thêm chi tiết nhé!';
-      responseType = 'product_info';
-    } else if (lowerMessage.includes('đơn hàng') || lowerMessage.includes('order')) {
-      responseText = 'Để kiểm tra đơn hàng, bạn có thể:\n\n' +
-        '1. Vào mục "Đơn hàng" trong tài khoản của bạn\n' +
-        '2. Cung cấp mã đơn hàng để tôi tra cứu giúp bạn\n\n' +
-        'Bạn cần hỗ trợ theo cách nào?';
-      responseType = 'info';
-    } else if (lowerMessage.includes('ship') || lowerMessage.includes('giao hàng') || lowerMessage.includes('vận chuyển')) {
-      responseText = '🚚 Thông tin vận chuyển:\n\n' +
-        '• Nội thành HCM/HN: 1-2 ngày\n' +
-        '• Các tỉnh thành khác: 3-5 ngày\n' +
-        '• Miễn phí ship cho đơn từ 500k\n\n' +
-        'Bạn cần thêm thông tin gì không?';
-      responseType = 'shipping';
-    } else if (lowerMessage.includes('thanh toán') || lowerMessage.includes('payment') || lowerMessage.includes('trả')) {
-      responseText = '💳 Các hình thức thanh toán:\n\n' +
-        '• COD (thanh toán khi nhận hàng)\n' +
-        '• Chuyển khoản ngân hàng\n' +
-        '• VNPay/MoMo/ZaloPay\n' +
-        '• Thẻ Visa/MasterCard\n\n' +
-        'Bạn muốn thanh toán bằng hình thức nào?';
-      responseType = 'info';
-    } else if (lowerMessage.includes('đổi') || lowerMessage.includes('trả') || lowerMessage.includes('hoàn')) {
-      responseText = '🔄 Chính sách đổi trả:\n\n' +
-        '• Đổi size trong 7 ngày\n' +
-        '• Hoàn tiền nếu lỗi sản xuất\n' +
-        '• Sản phẩm còn nguyên tem mác\n\n' +
-        'Bạn cần đổi/trả sản phẩm nào?';
-      responseType = 'support';
-    } else if (lowerMessage.includes('admin') || lowerMessage.includes('nhân viên') || lowerMessage.includes('hỗ trợ thực')) {
-      responseText = 'Tôi sẽ chuyển bạn đến nhân viên hỗ trợ. ' +
-        'Vui lòng chọn "Chat với Admin" để được hỗ trợ trực tiếp từ nhân viên của chúng tôi.';
-      responseType = 'support';
-    } else if (lowerMessage.includes('cảm ơn') || lowerMessage.includes('thank')) {
-      responseText = 'Không có gì ạ! Rất vui vì đã giúp được bạn. ' +
-        'Nếu cần hỗ trợ thêm, đừng ngại liên hệ nhé! 😊';
-      responseType = 'greeting';
-    } else {
-      responseText = 'Cảm ơn bạn đã liên hệ! Tôi chưa hiểu rõ câu hỏi của bạn.\n\n' +
-        'Bạn có thể hỏi về:\n' +
-        '• Sản phẩm và giá cả\n' +
-        '• Đơn hàng và vận chuyển\n' +
-        '• Thanh toán và đổi trả\n\n' +
-        'Hoặc nhập "admin" để chat với nhân viên hỗ trợ.';
-      responseType = 'help';
+    // Try to get chat history for context (last 10 messages)
+    let chatHistory = [];
+    try {
+      chatHistory = await ChatSupport.getChatHistory(roomId, 10);
+      // Format history for Gemini
+      chatHistory = chatHistory.map(msg => ({
+        message: msg.message,
+        sender_type: msg.sender_type
+      }));
+    } catch (error) {
+      console.log('⚠️ Could not load chat history for context:', error.message);
     }
     
-    // Create bot response message
+    // Try Gemini AI first
+    try {
+      const geminiResponse = await geminiService.generateResponse(userMessage, chatHistory, userId);
+      
+      if (geminiResponse && geminiResponse.text) {
+        responseText = geminiResponse.text;
+        responseType = geminiResponse.responseType || 'default';
+        confidenceScore = geminiResponse.confidenceScore || 0.8;
+        console.log(`✅ Gemini AI response generated (type: ${responseType}, confidence: ${confidenceScore.toFixed(2)})`);
+      } else {
+        // Fallback to keyword-based
+        console.log('⚠️ Gemini AI not available, using keyword-based fallback');
+        throw new Error('Gemini not available');
+      }
+    } catch (error) {
+      // Fallback to keyword-based responses
+      console.log('⚠️ Using keyword-based fallback response');
+      const lowerMessage = userMessage.toLowerCase();
+      
+      if (lowerMessage.includes('chào') || lowerMessage.includes('hello') || lowerMessage.includes('hi')) {
+        responseText = 'Chào bạn! Rất vui được hỗ trợ bạn. Bạn cần giúp gì ạ?';
+        responseType = 'greeting';
+      } else if (lowerMessage.includes('sản phẩm') || lowerMessage.includes('áo') || lowerMessage.includes('quần')) {
+        responseText = 'Bạn đang tìm sản phẩm gì? Tôi có thể giúp bạn tìm kiếm theo:\n\n' +
+          '• Tên sản phẩm\n' +
+          '• Danh mục (áo, quần, phụ kiện...)\n' +
+          '• Khoảng giá\n\n' +
+          'Hãy cho tôi biết thêm chi tiết nhé!';
+        responseType = 'product_info';
+      } else if (lowerMessage.includes('đơn hàng') || lowerMessage.includes('order')) {
+        responseText = 'Để kiểm tra đơn hàng, bạn có thể:\n\n' +
+          '1. Vào mục "Đơn hàng" trong tài khoản của bạn\n' +
+          '2. Cung cấp mã đơn hàng để tôi tra cứu giúp bạn\n\n' +
+          'Bạn cần hỗ trợ theo cách nào?';
+        responseType = 'info';
+      } else if (lowerMessage.includes('ship') || lowerMessage.includes('giao hàng') || lowerMessage.includes('vận chuyển')) {
+        responseText = '🚚 Thông tin vận chuyển:\n\n' +
+          '• Nội thành HCM/HN: 1-2 ngày\n' +
+          '• Các tỉnh thành khác: 3-5 ngày\n' +
+          '• Miễn phí ship cho đơn từ 500k\n\n' +
+          'Bạn cần thêm thông tin gì không?';
+        responseType = 'shipping';
+      } else if (lowerMessage.includes('thanh toán') || lowerMessage.includes('payment') || lowerMessage.includes('trả')) {
+        responseText = '💳 Các hình thức thanh toán:\n\n' +
+          '• COD (thanh toán khi nhận hàng)\n' +
+          '• Chuyển khoản ngân hàng\n' +
+          '• VNPay/MoMo/ZaloPay\n' +
+          '• Thẻ Visa/MasterCard\n\n' +
+          'Bạn muốn thanh toán bằng hình thức nào?';
+        responseType = 'info';
+      } else if (lowerMessage.includes('đổi') || lowerMessage.includes('trả') || lowerMessage.includes('hoàn')) {
+        responseText = '🔄 Chính sách đổi trả:\n\n' +
+          '• Đổi size trong 7 ngày\n' +
+          '• Hoàn tiền nếu lỗi sản xuất\n' +
+          '• Sản phẩm còn nguyên tem mác\n\n' +
+          'Bạn cần đổi/trả sản phẩm nào?';
+        responseType = 'support';
+      } else if (lowerMessage.includes('admin') || lowerMessage.includes('nhân viên') || lowerMessage.includes('hỗ trợ thực')) {
+        responseText = 'Tôi sẽ chuyển bạn đến nhân viên hỗ trợ. ' +
+          'Vui lòng chọn "Chat với Admin" để được hỗ trợ trực tiếp từ nhân viên của chúng tôi.';
+        responseType = 'support';
+      } else if (lowerMessage.includes('cảm ơn') || lowerMessage.includes('thank')) {
+        responseText = 'Không có gì ạ! Rất vui vì đã giúp được bạn. ' +
+          'Nếu cần hỗ trợ thêm, đừng ngại liên hệ nhé! 😊';
+        responseType = 'greeting';
+      } else {
+        responseText = 'Cảm ơn bạn đã liên hệ! Tôi chưa hiểu rõ câu hỏi của bạn.\n\n' +
+          'Bạn có thể hỏi về:\n' +
+          '• Sản phẩm và giá cả\n' +
+          '• Đơn hàng và vận chuyển\n' +
+          '• Thanh toán và đổi trả\n\n' +
+          'Hoặc nhập "admin" để chat với nhân viên hỗ trợ.';
+        responseType = 'help';
+      }
+    }
+    
+    // Create bot response message and store in chat history
     const botMessage = await ChatSupport.createMessage({
       room_id: roomId,
       message: responseText,
@@ -245,7 +279,8 @@ class ChatSupportService {
       message_type: 'text',
       bot_metadata: {
         response_type: responseType,
-        confidence_score: 0.8
+        confidence_score: confidenceScore,
+        ai_generated: geminiService.isAvailable()
       }
     });
     
