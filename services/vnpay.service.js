@@ -34,7 +34,11 @@ class VNPayService {
 
         const date = new Date();
         const createDate = moment(date).format('YYYYMMDDHHmmss');
-        const vnpTxnRef = moment(date).format('DDHHmmss'); 
+        // Tạo vnpTxnRef duy nhất (tối đa 15 ký tự theo yêu cầu VNPay)
+        // Format: YYYYMMDDHHmmss (14 ký tự) + 1 số random (1 ký tự) = 15 ký tự
+        const timestamp = moment(date).format('YYYYMMDDHHmmss');
+        const randomSuffix = Math.floor(Math.random() * 10).toString();
+        const vnpTxnRef = timestamp + randomSuffix; // Tổng cộng 15 ký tự 
         
         let vnp_Params = {
             'vnp_Version': '2.1.0',
@@ -43,7 +47,7 @@ class VNPayService {
             'vnp_Locale': 'vn',
             'vnp_CurrCode': 'VND',
             'vnp_TxnRef': vnpTxnRef,
-            'vnp_OrderInfo': 'Thanh toan don hang ' + vnpTxnRef, // Có dấu cách
+            'vnp_OrderInfo': 'Thanh toan don hang ' + vnpTxnRef, // Có dấu cách - VNPay chấp nhận
             'vnp_OrderType': 'billpayment',
             'vnp_Amount': total * 100,
             'vnp_ReturnUrl': this.vnp_ReturnUrl,
@@ -51,30 +55,49 @@ class VNPayService {
             'vnp_CreateDate': createDate
         };
 
-        // 1. Sắp xếp key
+        // 1. Sắp xếp key theo alphabet (theo chuẩn VNPay)
         const sortedKeys = Object.keys(vnp_Params).sort();
         
-        // 2. Tạo chuỗi signData (Để băm)
+        // 2. Tạo chuỗi signData (Để băm) - Theo chuẩn VNPay 2.1.0
+        // VNPay yêu cầu: KHÔNG encode key, CHỈ encode value và thay %20 bằng + (QUAN TRỌNG!)
         let signData = "";
         for (let i = 0; i < sortedKeys.length; i++) {
             let key = sortedKeys[i];
             let value = vnp_Params[key];
             if (i > 0) signData += "&";
             
-            // DÙNG encodeURIComponent VÀ thay %20 bằng dấu + (Chuẩn VNPay 2.1.0)
-            signData += encodeURIComponent(key) + "=" + encodeURIComponent(value).replace(/%20/g, "+");
+            // KHÔNG encode key - chỉ dùng key gốc
+            // ENCODE value bằng encodeURIComponent và thay %20 bằng + (theo yêu cầu VNPay)
+            const encodedValue = encodeURIComponent(String(value)).replace(/%20/g, "+");
+            
+            signData += key + "=" + encodedValue;
         }
 
-        // 3. Băm HMAC-SHA512
-        const hmac = crypto.createHmac("sha512", this.vnp_HashSecret);
+        // 3. Băm HMAC-SHA512 với secret key
+        // QUAN TRỌNG: Dùng Buffer để đảm bảo encoding đúng
+        const hmac = crypto.createHmac("sha512", Buffer.from(this.vnp_HashSecret, 'utf-8'));
         const secureHash = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");
 
-        // 4. URL cuối cùng (Dùng chính cái signData đã tạo làm query)
-        const paymentUrl = `${this.vnp_Url}?${signData}&vnp_SecureHash=${secureHash}`;
+        // 4. Tạo query string cho URL - Encode đầy đủ theo chuẩn URL (cả key và value)
+        // KHÁC với Sign Data: URL cần encode đầy đủ để tránh lỗi khi parse
+        const queryString = sortedKeys.map(key => {
+            return encodeURIComponent(key) + "=" + encodeURIComponent(String(vnp_Params[key]));
+        }).join("&");
+        
+        // 5. Tạo URL cuối cùng
+        const paymentUrl = `${this.vnp_Url}?${queryString}&vnp_SecureHash=${secureHash}`;
 
         await Payment.findByIdAndUpdate(payment._id, { transactionRef: vnpTxnRef });
         
-        console.log("✅ [CHUẨN SIGN DATA]:", signData); 
+        // Log chi tiết để debug
+        console.log("📋 [VNPay Params]:", JSON.stringify(vnp_Params, null, 2));
+        console.log("📋 [VNPay Sorted Keys]:", sortedKeys);
+        console.log("📋 [VNPay Sign Data (KHÔNG encode key, ENCODE value, thay %20 thành +)]:", signData);
+        console.log("📋 [VNPay Hash Secret Length]:", this.vnp_HashSecret.length);
+        console.log("📋 [VNPay Secure Hash]:", secureHash);
+        console.log("📋 [VNPay Query String (có encode)]:", queryString.substring(0, 150) + "...");
+        console.log("📋 [VNPay Full URL]:", paymentUrl.substring(0, 200) + "...");
+        
         return { success: true, paymentUrl };
     } catch (error) {
         console.error('❌ VNPay Service Error:', error);

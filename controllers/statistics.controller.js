@@ -40,7 +40,8 @@ exports.getProductStatistics = async (req, res) => {
       ...activeFilter,
       status: "Hết hàng"
     });
-    // ===== 2. Thống kê sản phẩm bán chạy =====
+    // ===== 2. Thống kê sản phẩm - Lấy TẤT CẢ sản phẩm chưa xóa =====
+    // Bước 1: Lấy thống kê bán hàng từ Order (nếu có)
     const validStatuses = ['delivered'];
     const matchOrder = { status: { $in: validStatuses } };
 
@@ -50,7 +51,7 @@ exports.getProductStatistics = async (req, res) => {
       if (to) matchOrder.createdAt.$lte = new Date(to);
     }
 
-    const pipeline = [
+    const salesStats = await Order.aggregate([
       { $match: matchOrder },
       { $unwind: '$items' },
       {
@@ -59,57 +60,88 @@ exports.getProductStatistics = async (req, res) => {
           totalSold: { $sum: '$items.quantity' },
           totalRevenue: { $sum: { $multiply: ['$items.quantity', '$items.price'] } }
         }
-      },
-      {
-        $lookup: {
-          from: 'products',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'product'
-        }
-      },
-      { $unwind: '$product' },
-      // Lọc bỏ sản phẩm đã xóa
-      { $match: { 'product.isDeleted': { $ne: true } } }
-    ];
-
-    if (status) {
-      pipeline.push({
-        $match: { 'product.status': status }
-      });
-    }
-
-    pipeline.push({
-      $addFields: {
-        stock: '$product.quantity',
-        name: '$product.name',
-        image: '$product.image',
-        category: '$product.category',
-        status: '$product.status'
       }
+    ]);
+
+    // Tạo map để tra cứu nhanh
+    const salesMap = new Map();
+    salesStats.forEach(stat => {
+      salesMap.set(stat._id.toString(), {
+        totalSold: stat.totalSold || 0,
+        totalRevenue: stat.totalRevenue || 0
+      });
     });
 
-    let sortField = {};
-    switch (sortBy) {
-      case 'sold':
-        sortField = { totalSold: order === 'asc' ? 1 : -1 };
-        break;
-      case 'revenue':
-        sortField = { totalRevenue: order === 'asc' ? 1 : -1 };
-        break;
-      case 'stock':
-        sortField = { stock: order === 'asc' ? 1 : -1 };
-        break;
-      case 'name':
-        sortField = { name: order === 'asc' ? 1 : -1 };
-        break;
-      default:
-        sortField = { totalSold: -1 };
+    // Bước 2: Lấy TẤT CẢ sản phẩm chưa xóa
+    const productMatch = { isDeleted: { $ne: true } };
+    if (status) {
+      productMatch.status = status;
     }
-    pipeline.push({ $sort: sortField });
-    pipeline.push({ $limit: parseInt(limit) });
 
-    const topProducts = await Order.aggregate(pipeline);
+    const allProducts = await Product.find(productMatch).lean();
+
+    // Bước 3: Tính stock và join với sales data
+    const topProducts = allProducts.map(product => {
+      // Tính tổng stock từ variations
+      let totalStock = 0;
+      if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
+        totalStock = product.variations.reduce((sum, v) => {
+          return sum + (Number(v.quantity) || 0);
+        }, 0);
+      } else {
+        totalStock = Number(product.quantity) || 0;
+      }
+
+      // Lấy sales data (nếu có)
+      const productId = product._id.toString();
+      const sales = salesMap.get(productId) || { totalSold: 0, totalRevenue: 0 };
+
+      return {
+        _id: product._id,
+        name: product.name,
+        image: product.images && product.images.length > 0 ? product.images[0] : product.image,
+        category: product.category,
+        status: product.status,
+        stock: totalStock,
+        totalSold: sales.totalSold,
+        totalRevenue: sales.totalRevenue
+      };
+    });
+
+    // Bước 4: Sắp xếp
+    const sortOrder = order === 'asc' ? 1 : -1;
+    
+    topProducts.sort((a, b) => {
+      let aVal, bVal;
+      switch (sortBy) {
+        case 'sold':
+          aVal = a.totalSold;
+          bVal = b.totalSold;
+          break;
+        case 'revenue':
+          aVal = a.totalRevenue;
+          bVal = b.totalRevenue;
+          break;
+        case 'stock':
+          aVal = a.stock;
+          bVal = b.stock;
+          break;
+        case 'name':
+          aVal = (a.name || '').toLowerCase();
+          bVal = (b.name || '').toLowerCase();
+          break;
+        default:
+          aVal = a.totalSold;
+          bVal = b.totalSold;
+      }
+      
+      if (aVal < bVal) return -1 * sortOrder;
+      if (aVal > bVal) return 1 * sortOrder;
+      return 0;
+    });
+
+    // Bước 5: Giới hạn số lượng
+    const limitedProducts = topProducts.slice(0, parseInt(limit));
 
     // ===== 3. Trả kết quả =====
     res.json({
@@ -119,7 +151,7 @@ exports.getProductStatistics = async (req, res) => {
         lowStockCount,
         outOfStockCount,
       },
-      topProducts
+      topProducts: limitedProducts
     });
 
   } catch (err) {
@@ -236,6 +268,16 @@ exports.getOrderStatistics = async (req, res) => {
     ]);
 
     // ===== 3. Biểu đồ theo ngày / tháng =====
+    // Xác định năm để hiển thị (mặc định là năm hiện tại)
+    let targetYear = new Date().getFullYear();
+    if (from) {
+      const fromDate = new Date(from);
+      targetYear = fromDate.getFullYear();
+    } else if (to) {
+      const toDate = new Date(to);
+      targetYear = toDate.getFullYear();
+    }
+
     const dateFormat =
       groupBy === "month"
         ? { $dateToString: { format: "%Y-%m", date: "$createdAt" } }
@@ -253,41 +295,97 @@ exports.getOrderStatistics = async (req, res) => {
       { $sort: { _id: 1 } }
     ]);
 
-    const trend = await Promise.all(
-      ordersByDate.map(async (item) => {
-        // Xác định khoảng thời gian bắt đầu và kết thúc
-        let startDate = new Date(item._id);
-        let endDate;
+    // Tạo map để tra cứu nhanh
+    const ordersMap = new Map();
+    ordersByDate.forEach(item => {
+      ordersMap.set(item._id, item);
+    });
 
-        if (groupBy === "month") {
-          endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 1);
-        } else {
-          endDate = new Date(startDate); // clone
+    // Nếu groupBy === "month", tạo đủ 12 tháng trong năm
+    let trend = [];
+    if (groupBy === "month") {
+      // Tạo mảng 12 tháng từ tháng 1 đến tháng 12
+      const allMonths = [];
+      for (let month = 1; month <= 12; month++) {
+        const monthStr = `${targetYear}-${String(month).padStart(2, '0')}`;
+        allMonths.push(monthStr);
+      }
+
+      // Xử lý từng tháng
+      trend = await Promise.all(
+        allMonths.map(async (monthStr) => {
+          const monthData = ordersMap.get(monthStr);
+          
+          // Xác định khoảng thời gian bắt đầu và kết thúc của tháng
+          const [year, month] = monthStr.split('-').map(Number);
+          const startDate = new Date(year, month - 1, 1);
+          const endDate = new Date(year, month, 1);
+
+          // Nếu có dữ liệu từ aggregation, dùng nó
+          if (monthData) {
+            // Lấy danh sách đơn đã giao trong khoảng thời gian để tính cost
+            const orders = await Order.find({
+              status: "delivered",
+              createdAt: { $gte: startDate, $lt: endDate },
+            }).populate("items.product_id", "import_price");
+
+            // Tính tổng giá vốn
+            let cost = 0;
+            orders.forEach((o) => {
+              o.items.forEach((it) => {
+                cost += (it.product_id?.import_price || 0) * it.quantity;
+              });
+            });
+
+            return {
+              date: monthStr,
+              orders: monthData.orderCount,
+              revenue: monthData.revenue,
+              profit: monthData.revenue - cost,
+            };
+          } else {
+            // Tháng không có đơn hàng
+            return {
+              date: monthStr,
+              orders: 0,
+              revenue: 0,
+              profit: 0,
+            };
+          }
+        })
+      );
+    } else {
+      // GroupBy === "day", giữ nguyên logic cũ
+      trend = await Promise.all(
+        ordersByDate.map(async (item) => {
+          // Xác định khoảng thời gian bắt đầu và kết thúc
+          let startDate = new Date(item._id);
+          let endDate = new Date(startDate);
           endDate.setDate(endDate.getDate() + 1);
-        }
 
-        // Lấy danh sách đơn đã giao trong khoảng thời gian
-        const orders = await Order.find({
-          status: "delivered",
-          createdAt: { $gte: startDate, $lt: endDate },
-        }).populate("items.product_id", "import_price");
+          // Lấy danh sách đơn đã giao trong khoảng thời gian
+          const orders = await Order.find({
+            status: "delivered",
+            createdAt: { $gte: startDate, $lt: endDate },
+          }).populate("items.product_id", "import_price");
 
-        // Tính tổng giá vốn
-        let cost = 0;
-        orders.forEach((o) => {
-          o.items.forEach((it) => {
-            cost += (it.product_id?.import_price || 0) * it.quantity;
+          // Tính tổng giá vốn
+          let cost = 0;
+          orders.forEach((o) => {
+            o.items.forEach((it) => {
+              cost += (it.product_id?.import_price || 0) * it.quantity;
+            });
           });
-        });
 
-        return {
-          date: item._id,
-          orders: item.orderCount,
-          revenue: item.revenue,
-          profit: item.revenue - cost,
-        };
-      })
-    );
+          return {
+            date: item._id,
+            orders: item.orderCount,
+            revenue: item.revenue,
+            profit: item.revenue - cost,
+          };
+        })
+      );
+    }
 
 
     // ===== Trả kết quả =====
@@ -503,6 +601,53 @@ exports.getInventoryStatistics = async (req, res) => {
   } catch (err) {
     console.error("Lỗi khi thống kê tồn kho:", err);
     res.status(500).json({ message: "Lỗi server khi thống kê tồn kho" });
+  }
+};
+
+// Lấy danh sách tất cả sản phẩm với số lượng tồn kho (chỉ sản phẩm chưa xóa)
+exports.getInventoryProductList = async (req, res) => {
+  try {
+    // Chỉ lấy sản phẩm chưa xóa (đang có trên admin)
+    const matchActive = { isDeleted: { $ne: true } };
+    
+    // Lấy tất cả sản phẩm
+    const allProducts = await Product.find(matchActive).lean();
+    
+    // Tính totalStock cho mỗi sản phẩm (giống với getInventoryStatistics)
+    const products = allProducts.map((product) => {
+      let totalQty = 0;
+      
+      if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
+        // Có variations: tổng tất cả quantity trong variations
+        totalQty = product.variations.reduce((sum, v) => {
+          const qty = Number(v.quantity) || 0;
+          return sum + qty;
+        }, 0);
+      } else {
+        // Không có variations: dùng quantity field trực tiếp
+        totalQty = Number(product.quantity) || 0;
+      }
+      
+      return {
+        _id: product._id,
+        name: product.name,
+        category: product.category,
+        brand: product.brand,
+        price: product.price,
+        import_price: product.import_price,
+        image: product.images && product.images.length > 0 ? product.images[0] : null,
+        status: product.status,
+        totalStock: totalQty
+      };
+    });
+    
+    // Sắp xếp theo tên sản phẩm
+    products.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    
+    res.json({ products });
+  } catch (err) {
+    console.error("Lỗi khi lấy danh sách sản phẩm tồn kho:", err);
+    res.status(500).json({ message: "Lỗi server khi lấy danh sách sản phẩm tồn kho" });
   }
 };
 

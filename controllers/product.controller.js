@@ -46,7 +46,7 @@ function extractPublicId(url) {
 exports.searchProducts = async (req, res) => {
   try {
     // Đã sửa: LẤY CẢ 'q' (từ khóa tìm kiếm từ client)
-    const { q, name, category, sort } = req.query; 
+    const { q, name, category, sort, featured } = req.query; 
     const filter = { isDeleted: { $ne: true } }; // Lọc bỏ sản phẩm đã xóa
 
     // 1. LỌC THEO TỪ KHÓA CHÍNH (q)
@@ -62,14 +62,19 @@ exports.searchProducts = async (req, res) => {
     // 2. LỌC THEO DANH MỤC (NẾU CÓ)
     if (category) filter.category = { $regex: `^${category}$`, $options: 'i' };
 
-    // 3. SẮP XẾP
+    // 3. LỌC THEO SẢN PHẨM NỔI BẬT (NẾU CÓ)
+    if (featured !== undefined && featured !== '') {
+      filter.is_featured = featured === 'true';
+    }
+
+    // 4. SẮP XẾP
     let sortOption = { createdAt: -1 };
     if (sort === "name_asc") sortOption = { name: 1 };
     if (sort === "name_desc") sortOption = { name: -1 };
     if (sort === "price_asc") sortOption = { price: 1 };
     if (sort === "price_desc") sortOption = { price: -1 };
 
-    // 4. THỰC HIỆN TRUY VẤN
+    // 5. THỰC HIỆN TRUY VẤN
     const products = await Product.find(filter)
       .collation({ locale: 'vi', strength: 1 })
       .sort(sortOption);

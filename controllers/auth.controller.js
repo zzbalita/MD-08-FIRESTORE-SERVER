@@ -103,6 +103,11 @@ exports.login = async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ success: false, message: "Email hoặc mật khẩu không đúng" });
 
+    // Kiểm tra tài khoản có bị khóa không
+    if (user.is_account_locked === true) {
+      return res.status(403).json({ success: false, message: "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin để được hỗ trợ." });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ success: false, message: "Email hoặc mật khẩu không đúng" });
 
