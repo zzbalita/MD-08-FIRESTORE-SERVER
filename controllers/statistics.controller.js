@@ -604,6 +604,53 @@ exports.getInventoryStatistics = async (req, res) => {
   }
 };
 
+// Lấy danh sách tất cả sản phẩm với số lượng tồn kho (chỉ sản phẩm chưa xóa)
+exports.getInventoryProductList = async (req, res) => {
+  try {
+    // Chỉ lấy sản phẩm chưa xóa (đang có trên admin)
+    const matchActive = { isDeleted: { $ne: true } };
+    
+    // Lấy tất cả sản phẩm
+    const allProducts = await Product.find(matchActive).lean();
+    
+    // Tính totalStock cho mỗi sản phẩm (giống với getInventoryStatistics)
+    const products = allProducts.map((product) => {
+      let totalQty = 0;
+      
+      if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
+        // Có variations: tổng tất cả quantity trong variations
+        totalQty = product.variations.reduce((sum, v) => {
+          const qty = Number(v.quantity) || 0;
+          return sum + qty;
+        }, 0);
+      } else {
+        // Không có variations: dùng quantity field trực tiếp
+        totalQty = Number(product.quantity) || 0;
+      }
+      
+      return {
+        _id: product._id,
+        name: product.name,
+        category: product.category,
+        brand: product.brand,
+        price: product.price,
+        import_price: product.import_price,
+        image: product.images && product.images.length > 0 ? product.images[0] : null,
+        status: product.status,
+        totalStock: totalQty
+      };
+    });
+    
+    // Sắp xếp theo tên sản phẩm
+    products.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    
+    res.json({ products });
+  } catch (err) {
+    console.error("Lỗi khi lấy danh sách sản phẩm tồn kho:", err);
+    res.status(500).json({ message: "Lỗi server khi lấy danh sách sản phẩm tồn kho" });
+  }
+};
+
 
 
 

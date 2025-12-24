@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 
 exports.getAllUsers = async (req, res) => {
   try {
-    const { keyword, status } = req.query;
+    const { keyword, is_account_locked } = req.query;
 
     const filter = {
       role: 1, // Chỉ lấy user khách hàng
@@ -21,8 +21,9 @@ exports.getAllUsers = async (req, res) => {
       ];
     }
 
-    if (status === "0" || status === "1") {
-      filter.status = parseInt(status); // phải ép kiểu vì query là string
+    // Filter theo is_account_locked (field mới dùng để khóa tài khoản)
+    if (is_account_locked === "true" || is_account_locked === "false") {
+      filter.is_account_locked = is_account_locked === "true";
     }
 
     const users = await User.find(filter).sort({ created_at: -1 });
@@ -66,20 +67,28 @@ exports.getUserById = async (req, res) => {
 
 
 
-// Cập nhật trạng thái (khóa/mở) tài khoản
+// Cập nhật trạng thái khóa tài khoản (dùng field is_account_locked)
 exports.updateUserStatus = async (req, res) => {
   try {
-    const { status } = req.body;
+    const { is_account_locked } = req.body; // Nhận giá trị boolean
+    
+    // Validate input
+    if (typeof is_account_locked !== 'boolean') {
+      return res.status(400).json({ message: 'Giá trị không hợp lệ. is_account_locked phải là boolean' });
+    }
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      { status },
+      { is_account_locked },
       { new: true }
-    );
+    ).select('-password');
+    
     if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
 
-    res.json({ message: 'Cập nhật trạng thái thành công', user });
+    const message = is_account_locked ? 'Khóa tài khoản thành công' : 'Mở khóa tài khoản thành công';
+    res.json({ message, user });
   } catch (err) {
-    res.status(500).json({ message: 'Lỗi cập nhật trạng thái', error: err.message });
+    res.status(500).json({ message: 'Lỗi cập nhật trạng thái khóa tài khoản', error: err.message });
   }
 };
 

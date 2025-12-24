@@ -57,7 +57,13 @@ const Users = new Schema({
 
   status: {
     type: Number,
-    default: 1 // 1 = hoạt động, 0 = bị khóa
+    default: 1 // 1 = hoạt động, 0 = bị khóa (dùng cho chat service)
+  },
+
+  // Account lock field (dùng để khóa tài khoản - không cho đăng nhập)
+  is_account_locked: {
+    type: Boolean,
+    default: false // false = tài khoản bình thường, true = tài khoản bị khóa
   },
 
   // Online status fields
