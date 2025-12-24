@@ -14,7 +14,7 @@ exports.getProductStatistics = async (req, res) => {
       from,
       to,
       limit = 10,
-      lowStockThreshold = 10
+      lowStockThreshold = 15
     } = req.query;
 
     // ===== 1. Lấy số liệu tổng (chỉ sản phẩm chưa xóa) =====
@@ -30,11 +30,21 @@ exports.getProductStatistics = async (req, res) => {
     ]);
     const totalStock = stockData.length > 0 ? stockData[0].totalStock : 0;
 
-    // 3. Số sản phẩm sắp hết hàng (ít nhất một biến thể có số lượng < threshold - chỉ sản phẩm chưa xóa)
-    const lowStockCount = await Product.countDocuments({
-      ...activeFilter,
-      "variations.quantity": { $lt: parseInt(lowStockThreshold) }
-    });
+    // 3. Số sản phẩm sắp hết hàng (tổng số lượng tất cả biến thể < threshold và > 0 - chỉ sản phẩm chưa xóa)
+    const threshold = parseInt(lowStockThreshold) || 15; // Mặc định 15
+    const lowStockProducts = await Product.find(activeFilter).lean();
+    const lowStockCount = lowStockProducts.filter(product => {
+      // Tính tổng quantity của TẤT CẢ biến thể
+      let totalQty = 0;
+      if (product.variations && product.variations.length > 0) {
+        totalQty = product.variations.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0);
+      } else {
+        totalQty = Number(product.quantity) || 0;
+      }
+      
+      // Sắp hết hàng: tổng quantity > 0 và < threshold
+      return totalQty > 0 && totalQty < threshold;
+    }).length;
     // 4. Số sản phẩm đã hết hàng (chỉ sản phẩm chưa xóa)
     const outOfStockCount = await Product.countDocuments({
       ...activeFilter,
@@ -648,6 +658,122 @@ exports.getInventoryProductList = async (req, res) => {
   } catch (err) {
     console.error("Lỗi khi lấy danh sách sản phẩm tồn kho:", err);
     res.status(500).json({ message: "Lỗi server khi lấy danh sách sản phẩm tồn kho" });
+  }
+};
+
+// Lấy danh sách sản phẩm sắp hết hàng (chỉ sản phẩm chưa xóa)
+exports.getLowStockProducts = async (req, res) => {
+  try {
+    const { lowStockThreshold = 15 } = req.query; // Mặc định 15
+    const threshold = parseInt(lowStockThreshold);
+    
+    // Chỉ lấy sản phẩm chưa xóa
+    const matchActive = { isDeleted: { $ne: true } };
+    
+    // Lấy tất cả sản phẩm chưa xóa
+    const allProducts = await Product.find(matchActive)
+      .populate('category', 'name')
+      .populate('brand', 'name')
+      .lean();
+    
+    // Lọc sản phẩm có tổng số lượng tất cả biến thể < threshold và > 0
+    const lowStockProducts = allProducts
+      .filter(product => {
+        // Tính tổng quantity của TẤT CẢ biến thể
+        let totalQty = 0;
+        if (product.variations && product.variations.length > 0) {
+          totalQty = product.variations.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0);
+        } else {
+          totalQty = Number(product.quantity) || 0;
+        }
+        
+        // Sắp hết hàng: tổng quantity > 0 và < threshold
+        return totalQty > 0 && totalQty < threshold;
+      })
+      .map(product => {
+        // Tính tổng quantity
+        let totalQty = 0;
+        if (product.variations && product.variations.length > 0) {
+          totalQty = product.variations.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0);
+        } else {
+          totalQty = Number(product.quantity) || 0;
+        }
+        
+        return {
+          _id: product._id,
+          name: product.name,
+          category: product.category?.name || product.category,
+          brand: product.brand?.name || product.brand,
+          price: product.price,
+          status: product.status,
+          image: product.images && product.images.length > 0 ? product.images[0] : product.image,
+          totalStock: totalQty,
+          variations: product.variations || []
+        };
+      });
+    
+    // Sắp xếp theo tồn kho tăng dần (sản phẩm ít tồn kho nhất trước)
+    lowStockProducts.sort((a, b) => a.totalStock - b.totalStock);
+    
+    res.json({ products: lowStockProducts });
+  } catch (err) {
+    console.error("Lỗi khi lấy danh sách sản phẩm sắp hết hàng:", err);
+    res.status(500).json({ message: "Lỗi server khi lấy danh sách sản phẩm sắp hết hàng" });
+  }
+};
+
+// Lấy danh sách sản phẩm hết hàng (chỉ sản phẩm chưa xóa)
+exports.getOutOfStockProducts = async (req, res) => {
+  try {
+    // Chỉ lấy sản phẩm chưa xóa
+    const matchActive = { isDeleted: { $ne: true } };
+    
+    // Lấy tất cả sản phẩm chưa xóa
+    const allProducts = await Product.find(matchActive)
+      .populate('category', 'name')
+      .populate('brand', 'name')
+      .lean();
+    
+    // Lọc sản phẩm hết hàng (tổng quantity = 0 hoặc status = "Hết hàng")
+    const outOfStockProducts = allProducts
+      .filter(product => {
+        let totalQty = 0;
+        if (product.variations && product.variations.length > 0) {
+          totalQty = product.variations.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0);
+        } else {
+          totalQty = Number(product.quantity) || 0;
+        }
+        return totalQty <= 0 || product.status === "Hết hàng";
+      })
+      .map(product => {
+        // Tính tổng quantity
+        let totalQty = 0;
+        if (product.variations && product.variations.length > 0) {
+          totalQty = product.variations.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0);
+        } else {
+          totalQty = Number(product.quantity) || 0;
+        }
+        
+        return {
+          _id: product._id,
+          name: product.name,
+          category: product.category?.name || product.category,
+          brand: product.brand?.name || product.brand,
+          price: product.price,
+          status: product.status,
+          image: product.images && product.images.length > 0 ? product.images[0] : product.image,
+          totalStock: totalQty,
+          variations: product.variations || []
+        };
+      });
+    
+    // Sắp xếp theo tên sản phẩm
+    outOfStockProducts.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    
+    res.json({ products: outOfStockProducts });
+  } catch (err) {
+    console.error("Lỗi khi lấy danh sách sản phẩm hết hàng:", err);
+    res.status(500).json({ message: "Lỗi server khi lấy danh sách sản phẩm hết hàng" });
   }
 };
 
