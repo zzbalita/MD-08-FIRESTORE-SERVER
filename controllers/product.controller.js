@@ -330,7 +330,20 @@ exports.updateProduct = async (req, res) => {
   let product = null;
 
   try {
-    const updateData = { ...req.body };
+    const updateData = {};
+
+    // Update basic fields
+    if (req.body.name) updateData.name = req.body.name;
+    if (req.body.price) {
+      const priceNum = Number(req.body.price);
+      if (isNaN(priceNum) || priceNum <= 0) {
+        return res.status(400).json({ message: "Giá phải là số dương." });
+      }
+      updateData.price = priceNum;
+    }
+    if (req.body.category) updateData.category = req.body.category;
+    if (req.body.brand) updateData.brand = req.body.brand;
+    if (req.body.status) updateData.status = req.body.status;
 
     if (typeof req.body.is_featured !== "undefined") {
       updateData.is_featured =
@@ -345,9 +358,12 @@ exports.updateProduct = async (req, res) => {
       updateData.import_price = importPriceNum;
     }
 
-    if (typeof updateData.description === "string") {
+    if (req.body.description) {
       try {
-        updateData.description = JSON.parse(updateData.description);
+        updateData.description = JSON.parse(req.body.description);
+        if (!Array.isArray(updateData.description)) {
+          return res.status(400).json({ message: "Mô tả phải là mảng." });
+        }
       } catch {
         return res.status(400).json({ message: "Mô tả không hợp lệ." });
       }
@@ -387,12 +403,8 @@ exports.updateProduct = async (req, res) => {
     product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Sản phẩm không tồn tại." });
 
-    const hasOrder = await Order.exists({ "items.product_id": product._id });
-    if (hasOrder) {
-      return res
-        .status(400)
-        .json({ message: "Sản phẩm này đã có đơn hàng, không thể chỉnh sửa!" });
-    }
+    // Note: We allow updates even if product has orders
+    // The frontend can show warnings, but backend allows all updates
 
     if (files.image) {
       const newImage = getImageUrl(files.image);
