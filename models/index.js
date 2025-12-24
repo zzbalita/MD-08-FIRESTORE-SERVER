@@ -3,6 +3,11 @@ const Chat = require('./Chat');
 const AdminChat = require('./AdminChat');
 const ChatMessage = require('./ChatMessage');
 
+// Chat Support Models (New)
+const ChatRoom = require('./ChatRoom');
+const ChatSupport = require('./ChatSupport');
+const UserStatus = require('./UserStatus');
+
 // User Models
 const User = require('./User');
 const Admin = require('./Admin');
@@ -29,6 +34,11 @@ module.exports = {
   Chat,
   AdminChat,
   ChatMessage,
+  
+  // Chat Support Models (New)
+  ChatRoom,
+  ChatSupport,
+  UserStatus,
   
   // User Models
   User,

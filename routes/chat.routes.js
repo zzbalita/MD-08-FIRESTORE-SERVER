@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/authMiddleware');
-const adminOnly = require('../middlewares/adminOnly');
+const authAdminOrStaff = require('../middlewares/authAdminOrStaff');
 const {
   getChatHistory,
   sendMessage,
@@ -42,10 +42,10 @@ router.post('/admin/sessions/:sessionId/messages', sendAdminChatMessage);
 // NEW: Get admin chat history for user (all sessions)
 router.get('/admin/history', getUserAdminChatHistory);
 
-// Admin chat routes (require admin privileges)
-router.get('/admin/all-chats', adminOnly, getAllAdminChats);
-router.get('/admin/sessions/:sessionId', adminOnly, getAdminChatHistory);
-router.post('/admin/sessions/:sessionId/respond', adminOnly, sendAdminResponse);
-router.post('/admin/sessions', adminOnly, createAdminChatSession);
+// Admin chat routes (require admin or staff privileges)
+router.get('/admin/all-chats', authAdminOrStaff, getAllAdminChats);
+router.get('/admin/sessions/:sessionId', authAdminOrStaff, getAdminChatHistory);
+router.post('/admin/sessions/:sessionId/respond', authAdminOrStaff, sendAdminResponse);
+router.post('/admin/sessions', authAdminOrStaff, createAdminChatSession);
 
 module.exports = router;

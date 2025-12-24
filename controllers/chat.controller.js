@@ -33,7 +33,7 @@ const getAutoResponse = async (userMessage, userId) => {
         // Loại áo không có trong database
         const chatSuggestions = await generateSmartSuggestions(message, 'product_info');
         return {
-          response: `❌ **Thông báo:** Hiện tại cửa hàng chúng tôi chưa nhập loại ${categoryCheck.requestedCategory}.\n\n💡 **Các loại áo có sẵn:**\n${categoryCheck.availableCategories}\n\n🆘 **Liên hệ hỗ trợ:**\n• Hotline: 1900-1234\n• Email: support@manzone.com\n• Chat với nhân viên để được tư vấn thêm`,
+          response: `❌ **Thông báo:** Hiện tại cửa hàng chúng tôi chưa nhập loại ${categoryCheck.requestedCategory}.\n\n💡 **Các loại áo có sẵn:**\n${categoryCheck.availableCategories}\n\n🆘 **Liên hệ hỗ trợ:**\n• Hotline: 1900-1234\n• Email: support@firestore.com\n• Chat với nhân viên để được tư vấn thêm`,
           responseType: 'product_info',
           suggestions: createInteractiveSuggestions(chatSuggestions)
         };
@@ -752,7 +752,7 @@ const handleSuggestionAction = async (action, message = '') => {
     
     'contact_support': async () => {
       return {
-        response: '🆘 **LIÊN HỆ HỖ TRỢ**\n\n📞 **Hotline:** 1900-1234\n📧 **Email:** support@manzone.com\n💬 **Chat:** Đang online\n⏰ **Giờ làm việc:** 8:00 - 22:00 (Thứ 2 - Chủ nhật)\n\n💡 **Gợi ý:** Chúng tôi luôn sẵn sàng hỗ trợ bạn!',
+        response: '🆘 **LIÊN HỆ HỖ TRỢ**\n\n📞 **Hotline:** 1900-1234\n📧 **Email:** support@firestore.com\n💬 **Chat:** Đang online\n⏰ **Giờ làm việc:** 8:00 - 22:00 (Thứ 2 - Chủ nhật)\n\n💡 **Gợi ý:** Chúng tôi luôn sẵn sàng hỗ trợ bạn!',
         responseType: 'info',
         suggestions: createInteractiveSuggestions([
           'Tìm sản phẩm',
@@ -822,7 +822,7 @@ const getGreetingMessage = async () => {
 };
 
 const getHelpMessage = async () => {
-  return `🆘 **HƯỚNG DẪN ĐẶT HÀNG CHI TIẾT**\n\n📋 **BƯỚC 1: TÌM KIẾM SẢN PHẨM**\n• Gõ tên sản phẩm: "áo sơ mi", "áo thun", "áo khoác"\n• Gõ từ khóa: "trắng", "đen", "size M", "giá rẻ"\n• Kết hợp: "áo sơ mi trắng size M"\n\n📋 **BƯỚC 2: XEM CHI TIẾT SẢN PHẨM**\n• Click vào sản phẩm để xem hình ảnh, mô tả\n• Kiểm tra size, màu sắc có sẵn\n• Xem giá cả và khuyến mãi\n\n📋 **BƯỚC 3: CHỌN SIZE VÀ MÀU**\n• Chọn size phù hợp (S, M, L, XL, XXL)\n• Chọn màu sắc yêu thích\n• Kiểm tra số lượng còn lại\n\n📋 **BƯỚC 4: THÊM VÀO GIỎ HÀNG**\n• Click "Thêm vào giỏ hàng"\n• Chọn số lượng muốn mua\n• Kiểm tra tổng tiền\n\n📋 **BƯỚC 5: THANH TOÁN**\n• Vào giỏ hàng để xem lại\n• Chọn địa chỉ giao hàng\n• Chọn phương thức thanh toán\n• Xác nhận đơn hàng\n\n📋 **BƯỚC 6: THEO DÕI ĐƠN HÀNG**\n• Nhận email xác nhận\n• Theo dõi trạng thái giao hàng\n• Nhận hàng và kiểm tra\n\n💡 **LƯU Ý QUAN TRỌNG:**\n• Kiểm tra size trước khi mua\n• Đọc kỹ chính sách đổi trả\n• Lưu số điện thoại để liên hệ\n• Thanh toán an toàn qua cổng chính thức\n\n🆘 **CẦN HỖ TRỢ?**\n• Hotline: 1900-1234\n• Chat với nhân viên\n• Email: support@manzone.com`;
+  return `🆘 **HƯỚNG DẪN ĐẶT HÀNG CHI TIẾT**\n\n📋 **BƯỚC 1: TÌM KIẾM SẢN PHẨM**\n• Gõ tên sản phẩm: "áo sơ mi", "áo thun", "áo khoác"\n• Gõ từ khóa: "trắng", "đen", "size M", "giá rẻ"\n• Kết hợp: "áo sơ mi trắng size M"\n\n📋 **BƯỚC 2: XEM CHI TIẾT SẢN PHẨM**\n• Click vào sản phẩm để xem hình ảnh, mô tả\n• Kiểm tra size, màu sắc có sẵn\n• Xem giá cả và khuyến mãi\n\n📋 **BƯỚC 3: CHỌN SIZE VÀ MÀU**\n• Chọn size phù hợp (S, M, L, XL, XXL)\n• Chọn màu sắc yêu thích\n• Kiểm tra số lượng còn lại\n\n📋 **BƯỚC 4: THÊM VÀO GIỎ HÀNG**\n• Click "Thêm vào giỏ hàng"\n• Chọn số lượng muốn mua\n• Kiểm tra tổng tiền\n\n📋 **BƯỚC 5: THANH TOÁN**\n• Vào giỏ hàng để xem lại\n• Chọn địa chỉ giao hàng\n• Chọn phương thức thanh toán\n• Xác nhận đơn hàng\n\n📋 **BƯỚC 6: THEO DÕI ĐƠN HÀNG**\n• Nhận email xác nhận\n• Theo dõi trạng thái giao hàng\n• Nhận hàng và kiểm tra\n\n💡 **LƯU Ý QUAN TRỌNG:**\n• Kiểm tra size trước khi mua\n• Đọc kỹ chính sách đổi trả\n• Lưu số điện thoại để liên hệ\n• Thanh toán an toàn qua cổng chính thức\n\n🆘 **CẦN HỖ TRỢ?**\n• Hotline: 1900-1234\n• Chat với nhân viên\n• Email: support@firestore.com`;
 };
 
 // Search operations - Tối ưu hóa

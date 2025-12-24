@@ -11,7 +11,7 @@ const Users = new Schema({
     unique: true,
     lowercase: true,
     trim: true,
-    match: [/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/, 'Email không hợp lệ']
+    match: [/.+@.+\..+/, 'Email không hợp lệ']
   },
 
 
@@ -26,21 +26,19 @@ const Users = new Schema({
 
   phone_number: {
     type: String,
-    // unique: true,
+    // unique: true, // Lưu ý: Nếu muốn duy nhất thì mở comment
     // sparse: true,
     trim: true,
     default: null
   },
 
+  // ⭐ BỔ SUNG CÁC TRƯỜNG ĐỊA CHỈ PHẲNG ⭐
+  street: { type: String, default: null, trim: true },
+  ward: { type: String, default: null, trim: true },
+  district: { type: String, default: null, trim: true },
+  province: { type: String, default: null, trim: true },
+  // ⭐ KẾT THÚC BỔ SUNG ⭐
 
-  // shipping_phone_number: {
-  //   type: String,
-  //   default: function () {
-  //     return this.phone_number || '';
-  //   }
-  // },
-
-  // is_phone_verified: { type: Boolean, default: false },
 
   avatar_url: { type: String },
 
@@ -67,12 +65,12 @@ const Users = new Schema({
     type: Boolean,
     default: false
   },
-
+  
   last_seen: {
     type: Date,
     default: Date.now
   },
-
+  
   socket_id: {
     type: String,
     default: null

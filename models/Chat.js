@@ -175,7 +175,7 @@ ChatSchema.statics.findOrCreateSession = async function(userId, sessionId, type 
         messages: [] // No welcome message for admin chats
       });
     } else {
-      const welcomeMessage = 'Chào bạn! Tôi là trợ lý ảo của Manzone. Tôi có thể giúp bạn tìm sản phẩm, hỗ trợ đặt hàng, và trả lời các câu hỏi về thời trang nam. Bạn cần hỗ trợ gì?';
+      const welcomeMessage = 'Chào bạn! Tôi là trợ lý ảo của FireStore. Tôi có thể giúp bạn tìm sản phẩm, hỗ trợ đặt hàng, và trả lời các câu hỏi về thời trang nam. Bạn cần hỗ trợ gì?';
       
       chat = new this({
         user_id: userId,

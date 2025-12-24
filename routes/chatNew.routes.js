@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/authMiddleware');
-const adminOnly = require('../middlewares/adminOnly');
+const authAdminOrStaff = require('../middlewares/authAdminOrStaff');
 const ChatController = require('../controllers/chatNew.controller');
 
 // All chat routes require authentication
@@ -40,26 +40,26 @@ router.post('/admin/sessions/:sessionId/messages', ChatController.sendAdminMessa
 router.patch('/admin/sessions/:sessionId/close', ChatController.closeChatSession);
 
 // ========================================
-// ADMIN DASHBOARD ROUTES (admin only)
+// ADMIN DASHBOARD ROUTES (admin & staff)
 // ========================================
 
 // Get all admin chat sessions
-router.get('/admin/dashboard/sessions', adminOnly, ChatController.getAdminChatSessions);
+router.get('/admin/dashboard/sessions', authAdminOrStaff, ChatController.getAdminChatSessions);
 
 // Get waiting chats
-router.get('/admin/dashboard/waiting', adminOnly, ChatController.getWaitingChats);
+router.get('/admin/dashboard/waiting', authAdminOrStaff, ChatController.getWaitingChats);
 
 // Get unassigned chats
-router.get('/admin/dashboard/unassigned', adminOnly, ChatController.getUnassignedChats);
+router.get('/admin/dashboard/unassigned', authAdminOrStaff, ChatController.getUnassignedChats);
 
 // Assign admin to chat
-router.post('/admin/dashboard/assign', adminOnly, ChatController.assignAdminToChat);
+router.post('/admin/dashboard/assign', authAdminOrStaff, ChatController.assignAdminToChat);
 
 // Send admin response to user
-router.post('/admin/dashboard/respond/:sessionId', adminOnly, ChatController.sendAdminResponse);
+router.post('/admin/dashboard/respond/:sessionId', authAdminOrStaff, ChatController.sendAdminResponse);
 
 // Resolve admin chat
-router.patch('/admin/dashboard/resolve/:sessionId', adminOnly, ChatController.resolveAdminChat);
+router.patch('/admin/dashboard/resolve/:sessionId', authAdminOrStaff, ChatController.resolveAdminChat);
 
 // ========================================
 // USER DASHBOARD ROUTES
@@ -87,7 +87,7 @@ router.patch('/sessions/:sessionId/close', ChatController.closeChatSession);
 
 // Legacy admin routes
 router.post('/user-admin-sessions', ChatController.createAdminChatSession);
-router.get('/admin/sessions/:sessionId', adminOnly, ChatController.getChatHistory);
-router.post('/admin/sessions/:sessionId/respond', adminOnly, ChatController.sendAdminResponse);
+router.get('/admin/sessions/:sessionId', authAdminOrStaff, ChatController.getChatHistory);
+router.post('/admin/sessions/:sessionId/respond', authAdminOrStaff, ChatController.sendAdminResponse);
 
 module.exports = router;
