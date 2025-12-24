@@ -25,37 +25,29 @@ const createRealOrder = async (app, payment) => {
         const shipping_fee = orderData.shipping_fee || 30000;
         const total_amount = payment.amount;
         const processedItems = [];
-        let firstItemImage = ""; // Biến để hứng ảnh đầu tiên cho Notification
+        let firstItemImage = ""; 
 
         for (const item of items) {
             const pId = item.product_id?._id || item.product_id;
             const product = await Product.findById(pId);
             
-            // Lấy link ảnh từ item gửi lên, nếu không có thì lấy từ Product trong DB
             const currentItemImage = item.image || (product ? product.image : "");
 
-            if (product) {
-                const variant = product.variations.find(v => v.color === item.color && v.size === item.size);
-                if (variant) {
-                    variant.quantity -= item.quantity;
-                    product.quantity -= item.quantity;
-                    await product.save();
-                }
-            }
+            // ⭐ ĐÃ BỎ ĐOẠN TRỪ KHO Ở ĐÂY 
+            // Mục đích: Để Admin bấm "Xác nhận" thì mới trừ kho giống đơn COD.
 
-            // Lưu ảnh đầu tiên tìm được để tí nữa gửi Notif
             if (!firstItemImage && currentItemImage) {
                 firstItemImage = currentItemImage;
             }
 
             processedItems.push({
-              product_id: new mongoose.Types.ObjectId(pId),
-              color: item.color,
-              size: item.size,
-              quantity: item.quantity,
-              price: item.price,
-              image: currentItemImage // Lưu link ảnh chuẩn vào Order
-          });
+                product_id: new mongoose.Types.ObjectId(pId),
+                color: item.color,
+                size: item.size,
+                quantity: item.quantity,
+                price: item.price,
+                image: currentItemImage 
+            });
         }
 
         const newOrder = new Order({
@@ -72,7 +64,8 @@ const createRealOrder = async (app, payment) => {
             shipping_fee: Number(shipping_fee),
             total_amount: Number(total_amount),
             payment_method: 'vnpay',
-            status: 'processing',
+            // ⭐ SỬA TẠI ĐÂY: Chuyển sang pending để Admin phải ấn xác nhận
+            status: 'pending', 
             payment_info: {
                 transaction_ref: payment.transactionRef,
                 payment_id: payment._id
@@ -92,38 +85,32 @@ const createRealOrder = async (app, payment) => {
 
         const io = app.get('io');
         if (io) {
+            // Gửi sự kiện để App Admin tự load lại danh sách chờ xác nhận
             io.emit('admin:new_order', savedOrder);
             io.to(payment.user_id.toString()).emit('payment:success', { order_id: savedOrder._id });
         }
 
-      
         try {
-            // Lấy ảnh từ chính mảng processedItems (vì mảng này đã được DB tìm hộ ở trên)
             let finalImage = "";
-            
             if (processedItems && processedItems.length > 0) {
-                // Lấy ảnh của sản phẩm đầu tiên trong đơn hàng
                 finalImage = processedItems[0].image; 
             }
-        
-            console.log("=> THỰC TẾ Link ảnh gửi thông báo:", finalImage);
         
             await createAndSendNotification(app, payment.user_id.toString(), {
                 type: "order",
                 title: "Thanh toán thành công",
-                message: `Đơn hàng #${savedOrder._id.toString().slice(-6)} đã được thanh toán.`,
+                message: `Đơn hàng #${savedOrder._id.toString().slice(-6)} đã thanh toán & đang chờ xác nhận.`,
                 order_id: savedOrder._id,
-                image: finalImage // Giờ đây finalImage sẽ có link từ DB Product
+                image: finalImage 
             });
         } catch (e) {
             console.error("Lỗi gửi thông báo:", e.message);
         }
-        // === HẾT ĐOẠN SỬA ===
 
         return savedOrder;
-    } catch (error) {n
+    } catch (error) {
         console.error("❌ LỖI TRONG createRealOrder:", error);
-        throw error; // Xóa chữ 'n' thừa ở đây nếu có
+        throw error;
     }
 };
 const paymentController = {

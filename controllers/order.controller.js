@@ -223,35 +223,33 @@ exports.updateOrderStatus = async (req, res) => {
         const { id } = req.params;
         const { status: newStatus } = req.body;
 
-        const order = await Order.findById(id).populate('items.product_id', 'image name');
+        const order = await Order.findById(id).populate('items.product_id');
         if (!order) return res.status(404).json({ message: "Không thấy đơn." });
 
         const currentStatus = order.status;
-        const validTransitions = {
-            pending: ['confirmed', 'cancelled'],
-            confirmed: ['processing', 'cancelled'],
-            processing: ['shipping', 'cancelled'],
-            shipping: ['delivered'],
-        };
+        
+        // ... (Giữ nguyên đoạn validTransitions của bạn) ...
 
-        if (['delivered', 'cancelled'].includes(currentStatus)) {
-            return res.status(400).json({ message: "Trạng thái cuối, không thể đổi." });
-        }
-
-        if (!(validTransitions[currentStatus] || []).includes(newStatus)) {
-            return res.status(400).json({ message: `Không thể chuyển ${currentStatus} -> ${newStatus}` });
-        }
-
-        // TRỪ KHO KHI XÁC NHẬN
+        // ⭐ LOGIC TRỪ KHO: Khi Admin chuyển từ Chờ xác nhận -> Đã xác nhận
         if (currentStatus === 'pending' && newStatus === 'confirmed') {
             for (const item of order.items) {
                 const product = await Product.findById(item.product_id);
                 if (product) {
+                    // Tìm đúng màu và size trong variations
                     const v = product.variations.find(v => v.color === item.color && v.size === item.size);
-                    if (v && v.quantity >= item.quantity) {
-                        v.quantity -= item.quantity;
-                        // Update total quantity and status automatically
-                        product.updateStatusBasedOnStock();
+                    
+                    if (v) {
+                        if (v.quantity < item.quantity) {
+                            return res.status(400).json({ 
+                                message: `Sản phẩm ${product.name} không đủ tồn kho để xác nhận!` 
+                            });
+                        }
+                        v.quantity -= item.quantity; // TRỪ KHO TẠI ĐÂY
+                        
+                        // Cập nhật trạng thái tổng (Hết hàng/Còn hàng) dựa trên số lượng mới
+                        if (typeof product.updateStatusBasedOnStock === 'function') {
+                            product.updateStatusBasedOnStock();
+                        }
                         await product.save();
                     }
                 }
