@@ -130,6 +130,54 @@ exports.login = async (req, res) => {
   }
 };
 
+// 3b. Đăng nhập khách bằng số điện thoại (không mật khẩu, không OTP)
+exports.guestLogin = async (req, res) => {
+  try {
+    const phone = (req.body.phone || "").trim();
+    const name = (req.body.name || "").trim();
+    if (!phone) {
+      return res.status(400).json({ success: false, message: "Vui lòng nhập số điện thoại." });
+    }
+
+    let user = await User.findOne({ phone_number: phone });
+    if (!user) {
+      try {
+        user = await User.create({
+          full_name: name || "Khách",
+          email: `guest_${phone}@guest.local`,
+          password: crypto.randomBytes(16).toString("hex"),
+          phone_number: phone,
+          role: 1,
+        });
+      } catch (createErr) {
+        // Xử lý trường hợp tạo trùng (race) — tìm lại theo số điện thoại.
+        user = await User.findOne({ phone_number: phone });
+        if (!user) throw createErr;
+      }
+    } else if (name && user.full_name !== name) {
+      user.full_name = name;
+      await user.save();
+    }
+
+    const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+    res.json({
+      success: true,
+      message: "Đăng nhập thành công",
+      token,
+      user: {
+        id: user._id,
+        full_name: user.full_name,
+        phone_number: user.phone_number,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    console.error("Lỗi guestLogin:", err);
+    res.status(500).json({ success: false, message: "Lỗi server" });
+  }
+};
+
 
 // -------------------------------------------------------------------
 // ⭐ 4. YÊU CẦU GỬI OTP CHO CHỨC NĂNG QUÊN MẬT KHẨU (Bước 1 Android) ⭐

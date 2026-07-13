@@ -24,6 +24,7 @@ const io = new Server(server, {
     origin: [
       "http://172.20.10.3:5001",
       "http://192.168.100.215",
+      "http://192.168.0.100:5001",
       "http://192.168.0.103:5001",
       "http://192.168.0.103:5002",
       "http://192.168.100.127",
@@ -435,8 +436,12 @@ setInterval(async () => {
 // ========================================
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+const HOST = process.env.HOST || "0.0.0.0";
+const SERVER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`;
+
+server.listen(PORT, HOST, () => {
   console.log(`🚀 Server đang chạy tại http://localhost:${PORT}`);
+  console.log(`🌐 LAN: ${SERVER_URL}`);
   console.log(`🔌 Socket.io đã sẵn sàng.`);
   console.log(`⏱️ Offline checker active (2 minute timeout)`);
 });

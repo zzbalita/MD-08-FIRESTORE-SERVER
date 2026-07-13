@@ -5,6 +5,7 @@ const authController = require("../controllers/auth.controller");
 router.post("/register", authController.register);
 router.post("/verify-otp", authController.verifyOtp);
 router.post("/login", authController.login);
+router.post("/guest", authController.guestLogin);
 
 // ⭐ DÒNG CẦN SỬA ĐỂ KHỚP VỚI CONTROLLER (requestPasswordOtp) ⭐
 router.post("/forgot-password/request-otp", authController.requestPasswordOtp); 

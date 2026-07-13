@@ -44,6 +44,7 @@ app.use((req, res, next) => {
 const corsOptions = {
   origin: [
     "http://172.20.10.3:5001",
+    "http://192.168.0.100:5001",
     "http://192.168.100.215",
     "http://192.168.100.127",
     "http://localhost:3000",
