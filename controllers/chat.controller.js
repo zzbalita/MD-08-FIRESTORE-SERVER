@@ -927,11 +927,8 @@ const formatProductList = (products, searchQuery) => {
     let info = `${index + 1}. **${product.name}**\n   💰 Giá: ${formatPrice(product.price)}\n   📂 Danh mục: ${product.category?.name || 'N/A'}`;
     
     if (product.variations?.length > 0) {
-      const colors = [...new Set(product.variations.map(v => v.color))];
-      const sizes = [...new Set(product.variations.map(v => v.size))];
-      
-      if (colors.length > 0) info += `\n   🎨 Màu sắc: ${colors.join(', ')}`;
-      if (sizes.length > 0) info += `\n   📏 Size: ${sizes.join(', ')}`;
+      const packages = [...new Set(product.variations.map(v => v.package || v.size).filter(Boolean))];
+      if (packages.length > 0) info += `\n   📦 Quy cách: ${packages.join(', ')}`;
     }
     
     return info + `\n   📦 Số lượng: ${product.quantity}\n`;

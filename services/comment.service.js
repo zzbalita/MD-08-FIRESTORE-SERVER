@@ -157,7 +157,7 @@ module.exports = {
 
     const [items, total] = await Promise.all([
       Comment.find(q)
-        .populate('user_id', 'full_name email avatar_url')
+        .populate('user_id', 'full_name phone_number avatar_url')
         .populate('product_id', 'name image')
         .sort({ createdAt: -1 })
         .skip((p - 1) * l)

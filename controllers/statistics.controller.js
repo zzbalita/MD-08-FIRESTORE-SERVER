@@ -186,10 +186,8 @@ exports.getOrderStatistics = async (req, res) => {
     // ===== 1. Summary =====
     const totalOrders = await Order.countDocuments(match);
     const pendingOrders = await Order.countDocuments({ ...match, status: "pending" });
-    const processingOrders = await Order.countDocuments({ ...match, status: "processing" });
-    const shippingOrders = await Order.countDocuments({ ...match, status: "shipping" });
+    const confirmedOrders = await Order.countDocuments({ ...match, status: "confirmed" });
     const deliveredOrders = await Order.countDocuments({ ...match, status: "delivered" });
-    const cancelledOrders = await Order.countDocuments({ ...match, status: "cancelled" });
 
     // Tính doanh thu (chỉ đơn đã giao)
     const deliveredOrdersData = await Order.find({ ...match, status: "delivered" });
@@ -272,8 +270,8 @@ exports.getOrderStatistics = async (req, res) => {
           totalSpent: 1,
           totalOrders: "$orderCount",
           name: "$user.full_name",
-          email: "$user.email"
-        }
+          phone_number: "$user.phone_number",
+        },
       }
     ]);
 
@@ -403,10 +401,8 @@ exports.getOrderStatistics = async (req, res) => {
       summary: {
         totalOrders,
         pendingOrders,
-        processingOrders,
-        shippingOrders,
+        confirmedOrders,
         deliveredOrders,
-        cancelledOrders,
         totalRevenue,
         totalCost,
         totalProfit,
@@ -427,7 +423,7 @@ exports.getOrderStatistics = async (req, res) => {
 // Thống kê tồn kho
 exports.getInventoryStatistics = async (req, res) => {
   try {
-    const { category, brand } = req.query;
+    const { category, origin } = req.query;
     let { minStock, maxStock, minPrice, maxPrice } = req.query;
 
     // Convert sang số
@@ -443,7 +439,7 @@ exports.getInventoryStatistics = async (req, res) => {
     // Match cho sản phẩm chưa xóa (đang có trên admin)
     const matchActive = { isDeleted: { $ne: true } }; // Chỉ tính sản phẩm chưa xóa
     if (category) matchActive.category = category;
-    if (brand) matchActive.brand = brand;
+    if (origin) matchActive.origin = origin;
     
     // Tính tổng số lượng tồn kho (chỉ sản phẩm chưa xóa)
     const stockData = await Product.aggregate([
@@ -473,7 +469,7 @@ exports.getInventoryStatistics = async (req, res) => {
       import_price: p.import_price,
       quantity: p.quantity,
       variations_count: p.variations?.length || 0,
-      variations: p.variations?.map(v => ({ color: v.color, size: v.size, qty: v.quantity })) || []
+      variations: p.variations?.map(v => ({ package: v.package, qty: v.quantity })) || []
     })));
     
     console.log(`📊 Bắt đầu tính giá trị tồn cho ${allProducts.length} sản phẩm...`);
@@ -544,7 +540,7 @@ exports.getInventoryStatistics = async (req, res) => {
             name: { $first: "$name" },
             price: { $first: "$price" },
             import_price: { $first: "$import_price" },
-            brand: { $first: "$brand" },
+            origin: { $first: "$origin" },
             image: { $first: { $arrayElemAt: ["$images", 0] } },
             totalStock: { $sum: "$variations.quantity" }
           }
@@ -642,7 +638,7 @@ exports.getInventoryProductList = async (req, res) => {
         _id: product._id,
         name: product.name,
         category: product.category,
-        brand: product.brand,
+        origin: product.origin,
         price: product.price,
         import_price: product.import_price,
         image: product.images && product.images.length > 0 ? product.images[0] : null,
@@ -673,7 +669,6 @@ exports.getLowStockProducts = async (req, res) => {
     // Lấy tất cả sản phẩm chưa xóa
     const allProducts = await Product.find(matchActive)
       .populate('category', 'name')
-      .populate('brand', 'name')
       .lean();
     
     // Lọc sản phẩm có tổng số lượng tất cả biến thể < threshold và > 0
@@ -703,7 +698,7 @@ exports.getLowStockProducts = async (req, res) => {
           _id: product._id,
           name: product.name,
           category: product.category?.name || product.category,
-          brand: product.brand?.name || product.brand,
+          origin: product.origin,
           price: product.price,
           status: product.status,
           image: product.images && product.images.length > 0 ? product.images[0] : product.image,
@@ -731,7 +726,6 @@ exports.getOutOfStockProducts = async (req, res) => {
     // Lấy tất cả sản phẩm chưa xóa
     const allProducts = await Product.find(matchActive)
       .populate('category', 'name')
-      .populate('brand', 'name')
       .lean();
     
     // Lọc sản phẩm hết hàng (tổng quantity = 0 hoặc status = "Hết hàng")
@@ -758,7 +752,7 @@ exports.getOutOfStockProducts = async (req, res) => {
           _id: product._id,
           name: product.name,
           category: product.category?.name || product.category,
-          brand: product.brand?.name || product.brand,
+          origin: product.origin,
           price: product.price,
           status: product.status,
           image: product.images && product.images.length > 0 ? product.images[0] : product.image,

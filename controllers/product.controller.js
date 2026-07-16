@@ -230,7 +230,7 @@ exports.createProduct = async (req, res) => {
     price,
     import_price,
     category,
-    brand,
+    origin,
     status = "Đang bán",
     description,
     variations: variationsRaw,
@@ -241,8 +241,8 @@ exports.createProduct = async (req, res) => {
   
   try {
 
-    if (!name || !category || !brand)
-      return res.status(400).json({ message: "Tên, danh mục và thương hiệu là bắt buộc." });
+    if (!name || !category)
+      return res.status(400).json({ message: "Tên và danh mục là bắt buộc." });
 
     const priceNum = Number(price);
     if (!price || isNaN(priceNum) || priceNum <= 0)
@@ -267,7 +267,7 @@ exports.createProduct = async (req, res) => {
     if (variationsRaw) {
       try {
         variations = JSON.parse(variationsRaw);
-        const ok = Array.isArray(variations) && variations.every(v => v.color && v.size && !isNaN(v.quantity));
+        const ok = Array.isArray(variations) && variations.every(v => v.package && !isNaN(v.quantity));
         if (!ok) throw new Error();
       } catch {
         return res.status(400).json({ message: "Trường variations không hợp lệ." });
@@ -305,7 +305,7 @@ exports.createProduct = async (req, res) => {
       import_price: importPriceNum,
       quantity: totalQuantity,
       category: category.trim(),
-      brand: brand.trim(),
+      origin: origin?.trim() || "",
       variations,
       status: statusValue.trim(), 
       is_featured: req.body.is_featured === 'true' || req.body.is_featured === true,
@@ -342,7 +342,7 @@ exports.updateProduct = async (req, res) => {
       updateData.price = priceNum;
     }
     if (req.body.category) updateData.category = req.body.category;
-    if (req.body.brand) updateData.brand = req.body.brand;
+    if (req.body.origin !== undefined) updateData.origin = req.body.origin;
     if (req.body.status) updateData.status = req.body.status;
 
     if (typeof req.body.is_featured !== "undefined") {
@@ -376,7 +376,7 @@ exports.updateProduct = async (req, res) => {
           return res.status(400).json({ message: "Variations phải là mảng." });
         }
         for (const v of parsedVariations) {
-          if (!v.color || !v.size || isNaN(v.quantity)) {
+          if (!v.package || isNaN(v.quantity)) {
             return res.status(400).json({ message: "Variation thiếu thông tin." });
           }
         }
@@ -567,31 +567,28 @@ exports.restockProduct = async (req, res) => {
     if (hasVariations) {
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({
-          message: "Sản phẩm có biến thể. Hãy gửi 'items: [{color,size,quantity}]' để nhập hàng."
+          message: "Sản phẩm có biến thể. Hãy gửi 'items: [{package,quantity}]' để nhập hàng."
         });
       }
 
       for (const it of items) {
         const addQty = Number(it.quantity);
-        if (!it.color || !it.size || !Number.isFinite(addQty) || addQty <= 0) {
-          return res.status(400).json({ message: "Mỗi item cần color, size và quantity > 0." });
+        if (!it.package || !Number.isFinite(addQty) || addQty <= 0) {
+          return res.status(400).json({ message: "Mỗi item cần package và quantity > 0." });
         }
 
-        const idx = product.variations.findIndex(
-          v => v.color === it.color && v.size === it.size
-        );
+        const idx = product.variations.findIndex((v) => v.package === it.package);
 
         if (idx >= 0) {
           product.variations[idx].quantity += addQty;
         } else if (allowNew) {
           product.variations.push({
-            color: it.color,
-            size: it.size,
-            quantity: addQty
+            package: it.package,
+            quantity: addQty,
           });
         } else {
           return res.status(400).json({
-            message: `Biến thể ${it.color}-${it.size} chưa tồn tại. Bật 'allowNew' để tự thêm.`
+            message: `Quy cách ${it.package} chưa tồn tại. Bật 'allowNew' để tự thêm.`,
           });
         }
       }

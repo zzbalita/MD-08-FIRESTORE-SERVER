@@ -40,24 +40,18 @@ app.use((req, res, next) => {
   next();
 });
 
-// --- Cấu hình CORS (Giữ nguyên toàn bộ IP của bạn) ---
+const { isAllowedOrigin } = require("./config/corsOrigins");
+
+// --- Cấu hình CORS ---
 const corsOptions = {
-  origin: [
-    "http://172.20.10.3:5001",
-    "http://192.168.0.100:5001",
-    "http://192.168.100.215",
-    "http://192.168.100.127",
-    "http://localhost:3000",
-    "http://localhost:5002",
-    "http://localhost:5003",
-    "http://192.168.1.9:5002",
-    "http://192.168.1.2:5002",
-    "http://192.168.1.4:5001",
-    "http://192.168.1.4:5002",
-    "http://10.158.14.189",
-    "http://10.0.2.2:5001", // Cho Emulator Android
-    "https://md-08-firestore-admin.vercel.app"
-  ],
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+    } else {
+      console.warn("CORS blocked origin:", origin);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   allowedHeaders: ["Content-Type", "Authorization"],
@@ -103,8 +97,8 @@ app.use('/api/admin/statistics', statisticsRoutes);
 // 3. Nhóm route Sản phẩm & Danh mục
 app.use("/api/products", require("./routes/product.routes"));
 app.use("/api/categories", require("./routes/category.routes"));
-app.use("/api/brands", require("./routes/brand.routes"));
-app.use("/api/sizes", require("./routes/size.routes"));
+app.use("/api/origins", require("./routes/origin.routes"));
+app.use("/api/packages", require("./routes/package.routes"));
 app.use("/api/description-fields", require("./routes/descriptionField.routes"));
 
 // 4. Nhóm route Người dùng & Chức năng

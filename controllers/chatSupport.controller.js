@@ -30,7 +30,7 @@ class ChatSupportController {
         io.to('admin_room').emit('newChatSession', {
           room_id: result.data.room.room_id,
           user_id: userId,
-          user_name: req.user.full_name || req.user.email,
+          user_name: req.user.full_name || req.user.phone_number,
           chat_type: chat_type,
           timestamp: new Date()
         });

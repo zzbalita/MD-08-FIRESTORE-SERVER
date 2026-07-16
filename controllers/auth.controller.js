@@ -1,33 +1,56 @@
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
-const sendMail = require("../utils/sendMail"); // Đảm bảo sendMail đã được cấu hình nếu bạn muốn gửi mail thật
 const OtpCode = require("../models/otp.model");
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 
-// 1. Đăng ký & tạo OTP (không gửi mail)
+const VALID_PHONE = /^0[35789]\d{8}$/;
+
+function normalizePhone(value) {
+  return (value || "").replace(/\s/g, "").trim();
+}
+
+function isValidPhone(phone) {
+  return VALID_PHONE.test(phone);
+}
+
+function userPayload(user) {
+  return {
+    id: user._id,
+    full_name: user.full_name,
+    phone_number: user.phone_number,
+    role: user.role,
+  };
+}
+
+// 1. Đăng ký & tạo OTP (không gửi SMS)
 exports.register = async (req, res) => {
   try {
-    const { full_name, email, password } = req.body;
+    const { full_name, phone, password } = req.body;
+    const phone_number = normalizePhone(phone);
 
-    const existingUser = await User.findOne({ email });
+    if (!isValidPhone(phone_number)) {
+      return res.status(400).json({ message: "Số điện thoại không hợp lệ." });
+    }
+
+    const existingUser = await User.findOne({ phone_number });
     if (existingUser) {
-      return res.status(400).json({ message: "Email đã được đăng ký" });
+      return res.status(400).json({ message: "Số điện thoại đã được đăng ký" });
     }
 
     const otp = crypto.randomInt(100000, 999999).toString();
 
     await OtpCode.findOneAndUpdate(
-      { email },
+      { phone_number },
       { code: otp, expiresAt: new Date(Date.now() + 10 * 60 * 1000) },
       { upsert: true, new: true }
     );
 
-    console.log(`OTP cho ${email} là: ${otp}`);
+    console.log(`OTP cho ${phone_number} là: ${otp}`);
 
     res.json({
-      message: "Đã tạo OTP (không gửi mail). Kiểm tra console để lấy mã",
-      email,
+      message: "Đã tạo OTP (không gửi SMS). Kiểm tra console để lấy mã",
+      phone_number,
       otp,
     });
   } catch (err) {
@@ -39,28 +62,27 @@ exports.register = async (req, res) => {
 // 2. Xác minh OTP & tạo tài khoản
 exports.verifyOtp = async (req, res) => {
   try {
-    const { email, otp, full_name, password } = req.body;
+    const { phone, otp, full_name, password } = req.body;
+    const phone_number = normalizePhone(phone);
 
-    const otpDoc = await OtpCode.findOne({ email });
+    if (!isValidPhone(phone_number)) {
+      return res.status(400).json({ success: false, message: "Số điện thoại không hợp lệ." });
+    }
+
+    const otpDoc = await OtpCode.findOne({ phone_number });
     if (!otpDoc) {
-      console.log(`OTP không tồn tại cho email: ${email}`);
       return res.status(400).json({ success: false, message: "OTP không tồn tại" });
     }
 
-    // So sánh string, loại bỏ khoảng trắng
     if (otpDoc.code.trim() !== otp.trim()) {
-      console.log(`OTP không đúng: gửi ${otp}, DB ${otpDoc.code}`);
       return res.status(400).json({ success: false, message: "OTP không đúng" });
     }
 
-    // Kiểm tra hết hạn
     if (otpDoc.expiresAt < Date.now()) {
-      console.log(`OTP đã hết hạn cho email: ${email}`);
       return res.status(400).json({ success: false, message: "OTP đã hết hạn" });
     }
 
-    // Kiểm tra user đã tồn tại chưa
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ phone_number });
     if (existingUser) {
       return res.status(400).json({ success: false, message: "Tài khoản đã tồn tại, vui lòng đăng nhập" });
     }
@@ -68,14 +90,13 @@ exports.verifyOtp = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = new User({
-      email,
       full_name,
+      phone_number,
       password: hashedPassword,
-      is_phone_verified: false,
     });
 
     await newUser.save();
-    await OtpCode.deleteMany({ email });
+    await OtpCode.deleteMany({ phone_number });
 
     const token = jwt.sign({ userId: newUser._id, role: newUser.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
@@ -83,12 +104,7 @@ exports.verifyOtp = async (req, res) => {
       success: true,
       message: "Đăng ký và xác minh thành công",
       token,
-      user: {
-        id: newUser._id,
-        full_name: newUser.full_name,
-        email: newUser.email,
-        role: newUser.role,
-      },
+      user: userPayload(newUser),
     });
   } catch (err) {
     console.error("Lỗi verifyOtp:", err);
@@ -99,17 +115,22 @@ exports.verifyOtp = async (req, res) => {
 // 3. Đăng nhập
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ success: false, message: "Email hoặc mật khẩu không đúng" });
+    const { phone, password } = req.body;
+    const phone_number = normalizePhone(phone);
 
-    // Kiểm tra tài khoản có bị khóa không
+    const user = await User.findOne({ phone_number });
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Số điện thoại hoặc mật khẩu không đúng" });
+    }
+
     if (user.is_account_locked === true) {
       return res.status(403).json({ success: false, message: "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin để được hỗ trợ." });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ success: false, message: "Email hoặc mật khẩu không đúng" });
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: "Số điện thoại hoặc mật khẩu không đúng" });
+    }
 
     const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
@@ -117,12 +138,7 @@ exports.login = async (req, res) => {
       success: true,
       message: "Đăng nhập thành công",
       token,
-      user: {
-        id: user._id,
-        full_name: user.full_name,
-        email: user.email,
-        role: user.role,
-      },
+      user: userPayload(user),
     });
   } catch (err) {
     console.error("Lỗi login:", err);
@@ -133,25 +149,24 @@ exports.login = async (req, res) => {
 // 3b. Đăng nhập khách bằng số điện thoại (không mật khẩu, không OTP)
 exports.guestLogin = async (req, res) => {
   try {
-    const phone = (req.body.phone || "").trim();
+    const phone_number = normalizePhone(req.body.phone);
     const name = (req.body.name || "").trim();
-    if (!phone) {
-      return res.status(400).json({ success: false, message: "Vui lòng nhập số điện thoại." });
+
+    if (!isValidPhone(phone_number)) {
+      return res.status(400).json({ success: false, message: "Vui lòng nhập số điện thoại hợp lệ." });
     }
 
-    let user = await User.findOne({ phone_number: phone });
+    let user = await User.findOne({ phone_number });
     if (!user) {
       try {
         user = await User.create({
           full_name: name || "Khách",
-          email: `guest_${phone}@guest.local`,
           password: crypto.randomBytes(16).toString("hex"),
-          phone_number: phone,
+          phone_number,
           role: 1,
         });
       } catch (createErr) {
-        // Xử lý trường hợp tạo trùng (race) — tìm lại theo số điện thoại.
-        user = await User.findOne({ phone_number: phone });
+        user = await User.findOne({ phone_number });
         if (!user) throw createErr;
       }
     } else if (name && user.full_name !== name) {
@@ -165,12 +180,7 @@ exports.guestLogin = async (req, res) => {
       success: true,
       message: "Đăng nhập thành công",
       token,
-      user: {
-        id: user._id,
-        full_name: user.full_name,
-        phone_number: user.phone_number,
-        role: user.role,
-      },
+      user: userPayload(user),
     });
   } catch (err) {
     console.error("Lỗi guestLogin:", err);
@@ -178,65 +188,46 @@ exports.guestLogin = async (req, res) => {
   }
 };
 
-
-// -------------------------------------------------------------------
-// ⭐ 4. YÊU CẦU GỬI OTP CHO CHỨC NĂNG QUÊN MẬT KHẨU (Bước 1 Android) ⭐
-// Endpoint: POST /api/auth/forgot-password/request-otp
-// -------------------------------------------------------------------
 exports.requestPasswordOtp = async (req, res) => {
   try {
-    const { email } = req.body;
+    const phone_number = normalizePhone(req.body.phone);
 
-    // 1. Kiểm tra Email tồn tại
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ phone_number });
     if (!user) {
-      // Trả về lỗi chung để tránh tiết lộ tài khoản nào tồn tại
       return res.status(404).json({
         success: false,
-        message: "Email không tồn tại hoặc lỗi gửi OTP.",
+        message: "Số điện thoại không tồn tại hoặc lỗi gửi OTP.",
       });
     }
 
-    // 2. Tạo mã OTP ngẫu nhiên
     const otp = crypto.randomInt(100000, 999999).toString();
 
-    // 3. Lưu/Cập nhật mã OTP vào DB (Thời gian hết hạn 10 phút)
     await OtpCode.findOneAndUpdate(
-      { email },
+      { phone_number },
       {
         code: otp,
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000), 
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
       },
       { upsert: true, new: true }
     );
 
-    // 4. Gửi email (Bạn có thể bỏ comment khối gửi mail dưới nếu đã cấu hình sendMail)
-    
-    // --- CHỈ IN RA CONSOLE (Nếu chưa cấu hình sendMail) ---
-    console.log(`[QUÊN MẬT KHẨU] OTP cho ${email} là: ${otp}`);
+    console.log(`[QUÊN MẬT KHẨU] OTP cho ${phone_number} là: ${otp}`);
     res.json({
       success: true,
       message: "Đã gửi mã OTP (Xem console server để lấy mã).",
     });
-
-
   } catch (error) {
     console.error("Lỗi yêu cầu OTP đặt lại mật khẩu:", error);
     res.status(500).json({ success: false, message: "Lỗi server: Không thể gửi mã OTP" });
   }
 };
 
-
-// -------------------------------------------------------------------
-// ⭐ 5. XÁC MINH OTP VÀ ĐẶT MẬT KHẨU MỚI (Bước 3 Android) ⭐
-// Endpoint: POST /api/auth/forgot-password/reset
-// -------------------------------------------------------------------
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, otp, newPassword } = req.body;
+    const phone_number = normalizePhone(req.body.phone);
+    const { otp, newPassword } = req.body;
 
-    // 1. Tìm mã OTP và kiểm tra hết hạn
-    const otpDoc = await OtpCode.findOne({ email, code: otp });
+    const otpDoc = await OtpCode.findOne({ phone_number, code: otp });
 
     if (!otpDoc || otpDoc.expiresAt < Date.now()) {
       return res.status(400).json({
@@ -245,22 +236,16 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // 2. Tìm User
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ phone_number });
     if (!user) {
       return res.status(404).json({ success: false, message: "Người dùng không tồn tại." });
     }
 
-    // 3. Hash mật khẩu mới
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // 4. Cập nhật mật khẩu và xoá OTP
-    user.password = hashedPassword;
+    user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
-    await OtpCode.deleteOne({ email }); 
+    await OtpCode.deleteOne({ phone_number });
 
     res.json({ success: true, message: "Đổi mật khẩu thành công. Vui lòng đăng nhập lại." });
-    
   } catch (error) {
     console.error("Lỗi đặt lại mật khẩu:", error);
     res.status(500).json({ success: false, message: "Lỗi server khi đặt lại mật khẩu." });

@@ -19,15 +19,14 @@ const ProductSchema = new mongoose.Schema(
     sold: { type: Number, default: 0 },
 
     category: { type: String },
-    brand: { type: String },
+    origin: { type: String },
 
-    // sizes, sử dụng variations
+    // quy cách đóng gói (500g, 1kg, ...)
     variations: [
       {
-        color: { type: String, required: true },
-        size: { type: String, required: true },
+        package: { type: String, required: true },
         quantity: { type: Number, required: true, min: 0 },
-      }
+      },
     ],
 
     status: { type: String, default: "Đang bán" },

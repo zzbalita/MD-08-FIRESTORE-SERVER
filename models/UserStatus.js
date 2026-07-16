@@ -169,7 +169,7 @@ UserStatusSchema.statics.getOnlineUsers = function(userType = null) {
   if (userType) {
     query.user_type = userType;
   }
-  return this.find(query).populate('user_id', 'full_name email avatar_url');
+  return this.find(query).populate('user_id', 'full_name phone_number avatar_url');
 };
 
 // Static method to check and update offline users
@@ -202,7 +202,7 @@ UserStatusSchema.statics.getUsersToMarkOffline = async function() {
   return this.find({
     is_online: true,
     last_activity: { $lt: offlineThreshold }
-  }).populate('user_id', 'full_name email');
+  }).populate('user_id', 'full_name phone_number');
 };
 
 // Static method to check if user is online

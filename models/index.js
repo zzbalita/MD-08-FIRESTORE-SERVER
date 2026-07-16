@@ -15,8 +15,8 @@ const Admin = require('./Admin');
 // Product Models
 const Product = require('./Product');
 const Category = require('./Category');
-const Brand = require('./Brand');
-const Size = require('./Size');
+const Origin = require('./Origin');
+const Package = require('./Package');
 const DescriptionField = require('./DescriptionField');
 
 // Order Models
@@ -47,8 +47,8 @@ module.exports = {
   // Product Models
   Product,
   Category,
-  Brand,
-  Size,
+  Origin,
+  Package,
   DescriptionField,
   
   // Order Models

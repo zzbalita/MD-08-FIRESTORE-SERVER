@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 // Danh sách các trường cần SELECT
-const USER_FIELDS = 'full_name email phone_number avatar_url date_of_birth gender street ward district province';
+const USER_FIELDS = 'full_name phone_number avatar_url date_of_birth gender street ward district province';
 
 // Lấy thông tin người dùng dựa vào token (ĐÃ SỬA: Dùng hằng số để chọn đầy đủ trường)
 exports.getMe = async (req, res) => {
@@ -136,7 +136,7 @@ exports.changePassword = async (req, res) => {
       user: {
         id: user._id,
         full_name: user.full_name,
-        email: user.email,
+        phone_number: user.phone_number,
         role: user.role,
         avatar_url: user.avatar_url
       }
@@ -169,7 +169,7 @@ exports.updateOnlineStatus = async (req, res) => {
         socket_id: is_online ? req.user.socketId || null : null
       },
       { new: true }
-    ).select('_id full_name email is_online last_seen');
+    ).select('_id full_name phone_number is_online last_seen');
 
     if (!updatedUser) {
       return res.status(404).json({ 
@@ -208,7 +208,7 @@ exports.getOnlineStatus = async (req, res) => {
     const onlineUsers = await User.find({ 
       is_online: true,
       role: 1 // Chỉ lấy user, không lấy admin
-    }).select('_id full_name email last_seen');
+    }).select('_id full_name phone_number last_seen');
 
     console.log('👥 Found online users:', onlineUsers.length);
 

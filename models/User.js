@@ -5,16 +5,6 @@ const Schema = mongoose.Schema;
 const Users = new Schema({
   full_name: { type: String, required: true, maxLength: 255 },
 
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    lowercase: true,
-    trim: true,
-    match: [/.+@.+\..+/, 'Email không hợp lệ']
-  },
-
-
   password: { type: String, required: true }, // bcrypt hash trước khi lưu
 
   date_of_birth: { type: Date },
@@ -26,10 +16,9 @@ const Users = new Schema({
 
   phone_number: {
     type: String,
-    // unique: true, // Lưu ý: Nếu muốn duy nhất thì mở comment
-    // sparse: true,
+    required: true,
+    unique: true,
     trim: true,
-    default: null
   },
 
   // ⭐ BỔ SUNG CÁC TRƯỜNG ĐỊA CHỈ PHẲNG ⭐

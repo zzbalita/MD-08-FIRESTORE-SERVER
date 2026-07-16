@@ -7,20 +7,16 @@ const Cart = require('../models/Cart');
 const vnpayService = require('../services/vnpay.service');
 // Import hàm gửi socket đã viết ở notification.controller
 const { createAndSendNotification } = require("./notification.controller");
+const {
+  ORDER_STATUSES,
+  STATUS_LABELS,
+  isValidOrderStatus,
+  canTransition,
+} = require("../config/orderStatuses");
 
 // ==========================================
 // 1. TẠO ĐƠN HÀNG THANH TOÁN TIỀN MẶT (COD)
 // ==========================================
-const statusMap = {
-    'pending': 'Chờ xác nhận',
-    'confirmed': 'Đã xác nhận',
-    'processing': 'Đang xử lý',
-    'shipping': 'Đang giao hàng',
-    'delivered': 'Đã giao thành công',
-    'cancelled': 'Đã hủy'
-};
-
-
 exports.createCashOrder = async (req, res) => {
     try {
         console.log('--- BẮT ĐẦU TẠO ĐƠN HÀNG COD ---');
@@ -47,12 +43,12 @@ exports.createCashOrder = async (req, res) => {
         // Kiểm tra từng sản phẩm và tồn kho
         for (const item of items) {
             const product_id = item.product_id?.["_id"] || item.product_id; 
-            const { color, size, quantity, price } = item;
+            const { package: packageName, quantity, price } = item;
             
-            if (!product_id || !color || !size || !quantity || !price) {
+            if (!product_id || !packageName || !quantity || !price) {
                 console.error('LỖI DỮ LIỆU SẢN PHẨM:', item);
                 return res.status(400).json({
-                    message: 'Mỗi sản phẩm phải có đủ: product_id, color, size, quantity, price.',
+                    message: 'Mỗi sản phẩm phải có đủ: product_id, package, quantity, price.',
                     item_error: item
                 });
             }
@@ -62,13 +58,11 @@ exports.createCashOrder = async (req, res) => {
                 return res.status(404).json({ message: `Không tìm thấy sản phẩm ID: ${product_id}` });
             }
 
-            const variant = product.variations.find(
-                (v) => v.color === color && v.size === size
-            );
+            const variant = product.variations.find((v) => v.package === packageName);
 
             if (!variant || variant.quantity < quantity) {
                 return res.status(400).json({
-                    message: `Sản phẩm ${product.name} (${color} - ${size}) không đủ hàng. Còn: ${variant?.quantity || 0}`
+                    message: `Sản phẩm ${product.name} (${packageName}) không đủ hàng. Còn: ${variant?.quantity || 0}`
                 });
             }
         }
@@ -152,7 +146,7 @@ exports.getMyOrders = async (req, res) => {
         const statusFilter = req.query.status;
         const filter = { user_id: userId };
         
-        if (statusFilter && ['pending', 'confirmed', 'processing', 'shipping', 'delivered', 'cancelled'].includes(statusFilter)) {
+        if (statusFilter && ORDER_STATUSES.includes(statusFilter)) {
             filter.status = statusFilter;
             console.log(`🔍 Lọc trạng thái: ${statusFilter}`);
         }
@@ -188,7 +182,7 @@ exports.getMyOrders = async (req, res) => {
 exports.getOrderById = async (req, res) => {
     try {
         const order = await Order.findById(req.params.id)
-            .populate('user_id', 'full_name email')
+            .populate('user_id', 'full_name phone_number')
             .populate('items.product_id', 'name image price')
             .lean();
 
@@ -227,16 +221,23 @@ exports.updateOrderStatus = async (req, res) => {
         if (!order) return res.status(404).json({ message: "Không thấy đơn." });
 
         const currentStatus = order.status;
-        
-        // ... (Giữ nguyên đoạn validTransitions của bạn) ...
 
-        // ⭐ LOGIC TRỪ KHO: Khi Admin chuyển từ Chờ xác nhận -> Đã xác nhận
+        if (!isValidOrderStatus(newStatus)) {
+            return res.status(400).json({ message: "Trạng thái không hợp lệ." });
+        }
+        if (!canTransition(currentStatus, newStatus)) {
+            return res.status(400).json({
+                message: `Không thể chuyển từ "${STATUS_LABELS[currentStatus] || currentStatus}" sang "${STATUS_LABELS[newStatus]}".`,
+            });
+        }
+
+        // Trừ kho khi Admin chuyển Chờ xác nhận -> Đã xác nhận
         if (currentStatus === 'pending' && newStatus === 'confirmed') {
             for (const item of order.items) {
                 const product = await Product.findById(item.product_id);
                 if (product) {
                     // Tìm đúng màu và size trong variations
-                    const v = product.variations.find(v => v.color === item.color && v.size === item.size);
+                    const v = product.variations.find((v) => v.package === item.package);
                     
                     if (v) {
                         if (v.quantity < item.quantity) {
@@ -265,8 +266,7 @@ exports.updateOrderStatus = async (req, res) => {
         await createAndSendNotification(req.app, order.user_id.toString(), {
             type: "order",
             title: "Cập nhật đơn hàng",
-            // SỬA DÒNG NÀY: Dùng statusMap để dịch newStatus
-            message: `Đơn hàng #${order._id.toString().slice(-6)} đã chuyển sang: ${statusMap[newStatus] || newStatus}`,
+            message: `Đơn hàng #${order._id.toString().slice(-6)} đã chuyển sang: ${STATUS_LABELS[newStatus] || newStatus}`,
             order_id: order._id,
             image: productImage
         });
@@ -282,50 +282,7 @@ exports.updateOrderStatus = async (req, res) => {
 // 5. HỦY ĐƠN HÀNG
 // ==========================================
 exports.cancelOrder = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const order = await Order.findById(id).populate('items.product_id', 'image name');
-        
-        if (!order) return res.status(404).json({ message: "Không thấy đơn." });
-        if (['delivered', 'cancelled'].includes(order.status)) {
-            return res.status(400).json({ message: "Không thể hủy." });
-        }
-
-        // Kiểm tra quyền (User chỉ hủy được pending)
-        if (req.user.role !== 'admin' && order.status !== 'pending') {
-            return res.status(403).json({ message: "Chỉ Admin mới hủy được đơn đang xử lý." });
-        }
-
-        // CỘNG LẠI KHO NẾU CẦN
-        if (order.status !== 'pending') {
-            for (const item of order.items) {
-                const product = await Product.findById(item.product_id?._id || item.product_id);
-                if (product) {
-                    const v = product.variations.find(v => v.color === item.color && v.size === item.size);
-                    if (v) v.quantity += item.quantity;
-                    // Update status based on current stock
-                    product.updateStatusBasedOnStock();
-                    await product.save();
-                }
-            }
-        }
-
-        order.status = 'cancelled';
-        await order.save();
-
-        // ⭐ THÔNG BÁO HỦY ĐƠN
-        await createAndSendNotification(req.app, order.user_id.toString(), {
-            type: "order",
-            title: "Đơn hàng đã hủy",
-            message: `Đơn hàng #${order._id.toString().slice(-6)} đã bị hủy.`,
-            order_id: order._id,
-            image: order.items[0]?.product_id?.image || null
-        });
-
-        res.status(200).json({ message: 'Đã hủy.', order });
-    } catch (error) {
-        res.status(500).json({ message: 'Lỗi.' });
-    }
+    return res.status(400).json({ message: "Không hỗ trợ hủy đơn hàng." });
 };
 
 // ==========================================
@@ -336,7 +293,7 @@ exports.getAllOrders = async (req, res) => {
         const { status, sort } = req.query;
         const filter = status ? { status } : {};
         const orders = await Order.find(filter)
-            .populate('user_id', 'full_name email')
+            .populate('user_id', 'full_name phone_number')
             .populate('items.product_id', 'name')
             .sort({ createdAt: sort === 'asc' ? 1 : -1 })
             .lean();

@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Product = require('../models/Product');
 const Category = require('../models/Category');
-const Brand = require('../models/Brand');
+const Origin = require('../models/Origin');
 const Order = require('../models/Order');
 
 /**
@@ -315,7 +315,7 @@ Trả lời CHỈ bằng JSON, không có text khác:`;
         }
         
         const products = await Product.find(productQuery)
-          .select('name price category brand image sold quantity')
+          .select('name price category origin image sold quantity')
           .sort(sortOrder)
           .limit(20)
           .lean();
@@ -336,12 +336,12 @@ Trả lời CHỈ bằng JSON, không có text khác:`;
 
       // Fetch brands if needed
       if (features.brands) {
-        const brands = await Brand.find()
+        const origins = await Origin.find()
           .select('name slug')
           .sort({ name: 1 })
           .limit(20)
           .lean();
-        data.brands = brands;
+        data.brands = origins;
       }
 
       // Fetch user orders if needed
@@ -441,7 +441,7 @@ Thông tin chung về FireStore (chỉ dùng khi không có dữ liệu cụ th�
         if (featureData.products && featureData.products.length > 0) {
           userMessageWithContext += '--- SẢN PHẨM (từ database) ---\n';
           featureData.products.slice(0, 15).forEach((p, idx) => {
-            userMessageWithContext += `${idx + 1}. Tên: "${p.name}" | Giá: ${p.price.toLocaleString('vi-VN')}đ | Danh mục: ${p.category || 'N/A'} | Thương hiệu: ${p.brand || 'N/A'} | Đã bán: ${p.sold || 0}\n`;
+            userMessageWithContext += `${idx + 1}. Tên: "${p.name}" | Giá: ${p.price.toLocaleString('vi-VN')}đ | Danh mục: ${p.category || 'N/A'} | Nguồn gốc: ${p.origin || 'N/A'} | Đã bán: ${p.sold || 0}\n`;
           });
           userMessageWithContext += '\n';
         }

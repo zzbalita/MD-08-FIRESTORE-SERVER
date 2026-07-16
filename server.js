@@ -1,4 +1,5 @@
 const http = require("http");
+const { isAllowedOrigin } = require("./config/corsOrigins");
 const { Server } = require("socket.io");
 const app = require("./app");
 
@@ -21,28 +22,9 @@ const server = http.createServer(app);
 // 2. Cấu hình Socket.io với danh sách CORS đầy đủ nhất từ cả 2 bản
 const io = new Server(server, {
   cors: {
-    origin: [
-      "http://172.20.10.3:5001",
-      "http://192.168.100.215",
-      "http://192.168.0.100:5001",
-      "http://192.168.0.103:5001",
-      "http://192.168.0.103:5002",
-      "http://192.168.100.127",
-      "http://localhost:3000",
-      "http://localhost:5002",
-      "http://localhost:5003",
-      "http://localhost:19006",
-      "http://192.168.1.9:5002",
-      "http://192.168.1.2:5002",
-      "http://192.168.1.4:5001",
-      "http://192.168.1.4:5002",
-      "http://10.158.14.189",
-      "http://10.0.2.2:5001",      // Cho Android Emulator
-      "exp://192.168.1.9:8081",    // Expo
-      "exp://localhost:8081",      // Expo Local
-      "https://md-08-firestore-admin.vercel.app",
-      "*"                          // Cho phép tất cả (tùy chọn nếu vẫn bị lỗi CORS)
-    ],
+    origin: (origin, callback) => {
+      callback(null, isAllowedOrigin(origin));
+    },
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"]

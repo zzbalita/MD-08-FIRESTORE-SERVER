@@ -47,7 +47,7 @@ exports.getCart = async (req, res) => {
 exports.addToCart = async (req, res) => {
     try {
         const userId = getUserIdOrGuestId(req); // ⭐ Dùng hàm hỗ trợ
-        const { product_id, name, image, size, color, quantity, price } = req.body;
+        const { product_id, name, image, package: packageName, quantity, price } = req.body;
 
         if (!userId) {
             // ⭐ Báo lỗi nếu không có cả User ID và Guest ID
@@ -55,9 +55,9 @@ exports.addToCart = async (req, res) => {
         }
 
         // Validate input
-        if (!product_id || !name || !size || !color || !quantity || !price) {
+        if (!product_id || !name || !packageName || !quantity || !price) {
             return res.status(400).json({
-                message: 'Thiếu thông tin sản phẩm: product_id, name, size, color, quantity, price.'
+                message: 'Thiếu thông tin sản phẩm: product_id, name, package, quantity, price.'
             });
         }
 
@@ -68,13 +68,11 @@ exports.addToCart = async (req, res) => {
         }
 
         // Kiểm tra biến thể có đủ hàng không
-        const variant = product.variations.find(
-            (v) => v.color === color && v.size === size
-        );
+        const variant = product.variations.find((v) => v.package === packageName);
 
         if (!variant || variant.quantity < quantity) {
             return res.status(400).json({
-                message: `Sản phẩm ${name} (${color} - ${size}) không đủ hàng trong kho.`
+                message: `Sản phẩm ${name} (${packageName}) không đủ hàng trong kho.`
             });
         }
 
@@ -88,8 +86,7 @@ exports.addToCart = async (req, res) => {
         const existingItemIndex = cart.items.findIndex(
             (item) =>
                 item.product_id.toString() === product_id &&
-                item.size === size &&
-                item.color === color
+                item.package === packageName
         );
 
         if (existingItemIndex > -1) {
@@ -101,8 +98,7 @@ exports.addToCart = async (req, res) => {
                 product_id,
                 name,
                 image,
-                size,
-                color,
+                package: packageName,
                 quantity,
                 price
             });
@@ -148,9 +144,7 @@ exports.updateCartItem = async (req, res) => {
         // Kiểm tra kho
         const product = await Product.findById(item.product_id);
         if (product) {
-            const variant = product.variations.find(
-                (v) => v.color === item.color && v.size === item.size
-            );
+            const variant = product.variations.find((v) => v.package === item.package);
 
             if (!variant || variant.quantity < quantity) {
                 return res.status(400).json({

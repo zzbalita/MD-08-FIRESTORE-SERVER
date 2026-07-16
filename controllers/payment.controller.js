@@ -42,8 +42,7 @@ const createRealOrder = async (app, payment) => {
 
             processedItems.push({
                 product_id: new mongoose.Types.ObjectId(pId),
-                color: item.color,
-                size: item.size,
+                package: item.package,
                 quantity: item.quantity,
                 price: item.price,
                 image: currentItemImage 

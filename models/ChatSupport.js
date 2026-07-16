@@ -156,7 +156,7 @@ ChatSupportSchema.statics.getChatHistory = async function(roomId, limit = 50, be
     if (msg.sender_id && mongoose.Types.ObjectId.isValid(msg.sender_id)) {
       try {
         // Try to populate as User first
-        const user = await User.findById(msg.sender_id).select('full_name email avatar_url').lean();
+        const user = await User.findById(msg.sender_id).select('full_name phone_number avatar_url').lean();
         if (user) {
           msg.sender_id = user;
           return msg;
@@ -206,7 +206,7 @@ ChatSupportSchema.statics.markAllAsRead = async function(roomId, userId) {
 ChatSupportSchema.statics.getLatestMessage = async function(roomId) {
   return this.findOne({ room_id: roomId })
     .sort({ created_at: -1 })
-    .populate('sender_id', 'full_name email avatar_url');
+    .populate('sender_id', 'full_name phone_number avatar_url');
 };
 
 // Static method to search messages
@@ -217,7 +217,7 @@ ChatSupportSchema.statics.searchMessages = async function(roomId, searchText, li
   })
     .sort({ created_at: -1 })
     .limit(limit)
-    .populate('sender_id', 'full_name email avatar_url');
+    .populate('sender_id', 'full_name phone_number avatar_url');
 };
 
 // Static method to get message statistics for a room
@@ -273,7 +273,7 @@ ChatSupportSchema.statics.getUserChatHistory = async function(userId, limit = 10
   return this.find({ room_id: { $in: roomIds } })
     .sort({ created_at: -1 })
     .limit(limit)
-    .populate('sender_id', 'full_name email avatar_url');
+    .populate('sender_id', 'full_name phone_number avatar_url');
 };
 
 // Static method to delete old messages (for cleanup - optional)

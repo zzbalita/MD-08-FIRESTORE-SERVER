@@ -496,12 +496,12 @@ class ChatSupportService {
           try {
             // Try to fetch user from User model if it's a valid ObjectId
             if (mongoose.Types.ObjectId.isValid(room.user_id)) {
-              const user = await User.findById(room.user_id).select('full_name email avatar_url');
+              const user = await User.findById(room.user_id).select('full_name phone_number avatar_url');
               if (user) {
                 userInfo = {
                   id: user._id,
                   name: user.full_name,
-                  email: user.email,
+                  phone_number: user.phone_number,
                   avatar: user.avatar_url
                 };
               }
@@ -511,7 +511,7 @@ class ChatSupportService {
               userInfo = {
                 id: room.user_id.toString(),
                 name: 'Khách hàng',
-                email: null,
+                phone_number: null,
                 avatar: null
               };
             }
@@ -519,7 +519,7 @@ class ChatSupportService {
             userInfo = {
               id: room.user_id.toString(),
               name: 'Khách hàng',
-              email: null,
+              phone_number: null,
               avatar: null
             };
           }

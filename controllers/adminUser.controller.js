@@ -16,7 +16,6 @@ exports.getAllUsers = async (req, res) => {
     if (keyword) {
       filter.$or = [
         { full_name: { $regex: keyword, $options: 'i' } },
-        { email: { $regex: keyword, $options: 'i' } },
         { phone_number: { $regex: keyword, $options: 'i' } },
       ];
     }
@@ -107,21 +106,13 @@ exports.deleteUser = async (req, res) => {
 exports.adminUpdateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { full_name, phone_number, date_of_birth, gender, avatar_url, email, status } = req.body;
+    const { full_name, phone_number, date_of_birth, gender, avatar_url, status } = req.body;
 
     // Kiểm tra trùng số điện thoại
     if (phone_number) {
       const existingPhone = await User.findOne({ phone_number });
       if (existingPhone && existingPhone._id.toString() !== userId) {
         return res.status(400).json({ message: 'Số điện thoại đã được sử dụng bởi người khác.' });
-      }
-    }
-
-    // Kiểm tra trùng email (nếu cho phép sửa)
-    if (email) {
-      const existingEmail = await User.findOne({ email });
-      if (existingEmail && existingEmail._id.toString() !== userId) {
-        return res.status(400).json({ message: 'Email đã được sử dụng bởi người khác.' });
       }
     }
 
@@ -133,7 +124,6 @@ exports.adminUpdateUser = async (req, res) => {
         date_of_birth,
         gender,
         avatar_url,
-        email,
         status
       },
       { new: true, runValidators: true }

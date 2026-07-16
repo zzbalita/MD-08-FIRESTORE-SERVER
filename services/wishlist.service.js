@@ -19,7 +19,7 @@ class WishlistService {
     const products = await Product.find(
       { _id: { $in: ids } },
       // thêm ratingAvg/ratingCount ở đây nếu Product đã lưu sẵn 2 field này
-      'name image price brand status createdAt'
+      'name image price origin status createdAt'
     ).lean();
 
     // 2) Thống kê sao theo product_id
