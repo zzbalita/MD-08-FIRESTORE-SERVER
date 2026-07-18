@@ -1,10 +1,25 @@
 const mongoose = require("mongoose");
 
+function resolveMongoUri() {
+  return (
+    process.env.MONGO_URI ||
+    process.env.MONGODB_URI ||
+    process.env.MONGO_URL ||
+    process.env.DATABASE_URL ||
+    ""
+  );
+}
+
 const connectDB = async () => {
-  const uri = process.env.MONGO_URI;
+  const uri = resolveMongoUri();
 
   if (!uri) {
-    console.error("❌ MONGO_URI is missing. Set it in Railway Variables.");
+    console.error(
+      "❌ MONGO_URI is missing. In Railway → Variables, add MONGO_URI with your Atlas connection string."
+    );
+    console.error(
+      "   Accepted names: MONGO_URI, MONGODB_URI, MONGO_URL, DATABASE_URL"
+    );
     process.exit(1);
   }
 
