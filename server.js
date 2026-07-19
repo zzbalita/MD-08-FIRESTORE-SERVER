@@ -27,7 +27,11 @@ const io = new Server(server, {
     },
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"]
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "ngrok-skip-browser-warning",
+    ],
   },
   transports: ['websocket', 'polling'],
   allowEIO3: true

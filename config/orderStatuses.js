@@ -2,8 +2,8 @@ const ORDER_STATUSES = ['pending', 'confirmed', 'delivered'];
 
 const STATUS_LABELS = {
   pending: 'Chờ xác nhận',
-  confirmed: 'Đã xác nhận',
-  delivered: 'Đã giao hàng',
+  confirmed: 'Đã chuẩn bị',
+  delivered: 'Đã giao / đã lấy',
 };
 
 const STATUS_TRANSITIONS = {

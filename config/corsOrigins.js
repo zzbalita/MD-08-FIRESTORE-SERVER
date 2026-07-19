@@ -3,6 +3,7 @@ const staticOrigins = [
   "http://localhost:8080",
   "http://127.0.0.1:8080",
   "http://192.168.1.7:8080",
+  "http://192.168.1.5:8080",
   "https://md-08-firestore-admin.vercel.app",
 ];
 
@@ -24,6 +25,9 @@ function isAllowedOrigin(origin) {
   if (/^http:\/\/192\.168\.\d+\.\d+:8080$/.test(origin)) return true;
   // Vercel preview / production URLs for store or admin
   if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)) return true;
+  // ngrok tunnels (temporary public HTTPS for local API)
+  if (/^https:\/\/[a-z0-9-]+\.ngrok(-free)?\.dev$/.test(origin)) return true;
+  if (/^https:\/\/[a-z0-9-]+\.ngrok-free\.app$/.test(origin)) return true;
   return false;
 }
 
